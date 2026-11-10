@@ -31,6 +31,9 @@ collector 本体は POSIX シェルスクリプトで、これら以外の依存
 | GitHub Actions: `actions/checkout`, `actions/setup-node` | CI | v4 | MIT |
 | GitHub CLI（`gh`） | リリースの公開（CI） | ランナーに導入済みのもの | MIT |
 | util-linux `setpriv` | テストで JVM を別 uid で起動 | Temurin イメージに含まれる | GPL-2.0-or-later |
+| GitHub Actions: `actions/configure-pages`, `actions/upload-pages-artifact`, `actions/deploy-pages` | 公開デモ（GitHub Pages）の配信 | v5 / v3 / v4 | MIT |
+| ImageMagick | README 用スクリーンショットの減色（`scripts/screenshots.sh`） | 開発機に導入済みのもの | ImageMagick License |
+| Google Chrome / Chromium（ヘッドレス） | README 用スクリーンショットの撮影 | 開発機に導入済みのもの | Chromium: BSD-3-Clause ほか（Chrome は Google の利用規約） |
 
 ## 参照している仕様・サービス / Referenced specifications and services
 

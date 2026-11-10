@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- README: live demo link (GitHub Pages, `dashboard/index.html` only) and screenshots of the synthetic demo; `scripts/screenshots.sh` regenerates them.
+- Dashboard: view options in the URL fragment (`#demo&lang=en&theme=dark&tz=UTC&range=24h`).
+- `.github/workflows/pages.yml`: deploys the dashboard after its tests pass.
+
 ## v0.2.0 - 2026-11-10
 
 ### Collector
