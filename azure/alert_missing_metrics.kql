@@ -1,0 +1,10 @@
+// Heartbeat: hosts that sent metrics in the last 24 hours but none in the last 15 minutes.
+// Catches a stopped collector, an unreadable file for AMA, or a broken DCR even when
+// JAVA_GC_COLLECTOR_FAILED never arrives. Scope: dedicated Log Analytics workspace.
+// Configure: measure = table rows, condition > 0, evaluation every 5 minutes, dimension = host.
+JavaGc_CL
+| where TimeGenerated > ago(24h)
+| where record_type == "metric"
+| summarize LastMetric = max(TimeGenerated) by host
+| where LastMetric < ago(15m)
+| project host, LastMetric, MinutesSilent = datetime_diff('minute', now(), LastMetric)

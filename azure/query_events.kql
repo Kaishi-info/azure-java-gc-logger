@@ -1,0 +1,6 @@
+// Log Analytics: state-transition events emitted by collect_gc.sh
+JavaGc_CL
+| where TimeGenerated > ago(48h)
+| where record_type == "event"
+| project TimeGenerated, host, event_name, old_pct, consecutive_samples, detail
+| order by TimeGenerated desc

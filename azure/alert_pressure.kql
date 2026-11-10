@@ -1,0 +1,9 @@
+// Azure log search alert. Scope: dedicated Log Analytics Workspace.
+// Configure Measure = table rows, condition > 0, query time window = 15 minutes,
+// evaluation every 5 minutes, dimension = host. This alerts on state transition ONLY.
+JavaGc_CL
+| where TimeGenerated > ago(15m)
+| where record_type == "event"
+| where event_name in ("JAVA_GC_OLD_HIGH", "JAVA_GC_COLLECTOR_FAILED")
+| summarize AlertEvents=count() by host
+| where AlertEvents > 0

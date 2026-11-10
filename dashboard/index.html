@@ -1,0 +1,883 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; connect-src 'none'">
+<title>Java GC Timeline</title>
+<style>
+:root{
+  --bg:#f3f5f9;--surface:#ffffff;--surface-2:#f8fafc;--ink:#142033;--muted:#5d6b7e;--faint:#8a97a8;
+  --border:#dfe5ee;--grid:#e8edf4;--accent:#2457c5;--accent-ink:#ffffff;
+  --ok:#1f8a5b;--warn:#b26b00;--bad:#c23a4f;--gap:rgba(120,130,150,.13);--threshold:#c4892e;
+  --heat:36,87,197;--shadow:0 1px 2px rgba(16,32,64,.05),0 4px 16px rgba(16,32,64,.05);
+  --s1:#2457c5;--s2:#d9682b;--s3:#1f8a5b;--s4:#8b55c9;--s5:#c23a7a;--s6:#6b7f12;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#0e1420;--surface:#151d2b;--surface-2:#1a2333;--ink:#e6ebf3;--muted:#9aa7ba;--faint:#6f7d92;
+    --border:#263247;--grid:#222d40;--accent:#6d9bff;--accent-ink:#0b1220;
+    --ok:#4cc38a;--warn:#e3a443;--bad:#ff7a8c;--gap:rgba(160,170,190,.12);--threshold:#e0a85a;
+    --heat:109,155,255;--shadow:none;
+    --s1:#6d9bff;--s2:#ff9a5c;--s3:#4cc38a;--s4:#b88cff;--s5:#ff7ab3;--s6:#b5c94a;
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0e1420;--surface:#151d2b;--surface-2:#1a2333;--ink:#e6ebf3;--muted:#9aa7ba;--faint:#6f7d92;
+  --border:#263247;--grid:#222d40;--accent:#6d9bff;--accent-ink:#0b1220;
+  --ok:#4cc38a;--warn:#e3a443;--bad:#ff7a8c;--gap:rgba(160,170,190,.12);--threshold:#e0a85a;
+  --heat:109,155,255;--shadow:none;
+  --s1:#6d9bff;--s2:#ff9a5c;--s3:#4cc38a;--s4:#b88cff;--s5:#ff7ab3;--s6:#b5c94a;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.6 system-ui,-apple-system,"Segoe UI","Hiragino Sans","Yu Gothic UI",sans-serif;-webkit-font-smoothing:antialiased}
+header{border-bottom:1px solid var(--border);background:var(--surface)}
+.wrap{max-width:1280px;margin:0 auto;padding:0 20px}
+.top{display:flex;gap:16px;align-items:center;justify-content:space-between;padding-top:18px;padding-bottom:18px;flex-wrap:wrap}
+.brand h1{font-size:19px;margin:0;letter-spacing:-.2px}
+.brand p{margin:2px 0 0;color:var(--muted);font-size:12.5px}
+.ctl{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+select,button{font:inherit;font-size:13px;color:var(--ink);background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:6px 10px;cursor:pointer}
+button:hover,select:hover{border-color:var(--faint)}
+button.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);font-weight:600}
+button:focus-visible,select:focus-visible,label.btn:focus-within{outline:2px solid var(--accent);outline-offset:2px}
+main{padding:20px 0 48px}
+.panel{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:18px 20px;box-shadow:var(--shadow);margin-bottom:16px;min-width:0}
+.drop{display:flex;gap:16px;align-items:center;flex-wrap:wrap;border:1.5px dashed var(--border);border-radius:10px;padding:18px;background:var(--surface-2)}
+.drop.drag{border-color:var(--accent)}
+.drop .txt{flex:1;min-width:220px}.drop strong{display:block;font-size:15px}.drop small{color:var(--muted)}
+label.btn{display:inline-block;background:var(--accent);color:var(--accent-ink);border-radius:8px;padding:7px 14px;font-weight:600;cursor:pointer;font-size:13px}
+input[type=file]{position:absolute;width:1px;height:1px;opacity:0}
+.status{font-size:12.5px;color:var(--muted);margin-top:10px}
+.bar{position:sticky;top:0;z-index:5;background:color-mix(in srgb,var(--bg) 88%,transparent);backdrop-filter:blur(6px);padding:10px 0;margin:-4px 0 12px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.seg{display:inline-flex;border:1px solid var(--border);border-radius:8px;overflow:hidden;background:var(--surface)}
+.seg button{border:0;border-radius:0;padding:6px 12px}
+.seg button[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink);font-weight:600}
+.chips{display:flex;gap:6px;flex-wrap:wrap}
+.chip{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;font-size:12.5px}
+.chip[aria-pressed="false"]{opacity:.45}
+.dot{width:9px;height:9px;border-radius:50%;display:inline-block}
+.spacer{flex:1}
+.notice{font-size:12.5px;color:var(--muted);border-left:3px solid var(--warn);padding:2px 0 2px 10px;margin:12px 0 0}
+.kpis{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px;margin-bottom:16px}
+.kpi{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px 16px;box-shadow:var(--shadow);min-width:0}
+.kpi span{display:block;font-size:12px;color:var(--muted)}
+.kpi strong{display:block;font-size:24px;font-weight:650;letter-spacing:-.5px;font-variant-numeric:tabular-nums;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.kpi small{display:block;font-size:11.5px;color:var(--faint);margin-top:2px}
+.grid2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin-bottom:16px}
+.grid2 .panel{margin:0}
+h2{font-size:15px;margin:0 0 2px;letter-spacing:-.1px}
+.sub{font-size:12px;color:var(--muted);margin:0 0 8px}
+canvas{display:block;width:100%;height:240px}
+canvas.heat{height:230px}
+.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--muted);margin-top:6px}
+.legend i{display:inline-block;width:14px;height:3px;border-radius:2px;vertical-align:middle;margin-right:5px}
+.tbl{overflow:auto;max-height:360px}
+table{width:100%;border-collapse:collapse;font-size:12.5px;font-variant-numeric:tabular-nums}
+th,td{text-align:left;padding:7px 10px;border-bottom:1px solid var(--border);white-space:nowrap}
+th{position:sticky;top:0;background:var(--surface);color:var(--muted);font-weight:600;font-size:12px}
+td.num,th.num{text-align:right}
+.tag{display:inline-block;padding:1px 8px;border-radius:999px;font-size:11.5px;font-weight:600;border:1px solid currentColor}
+.tag.bad{color:var(--bad)}.tag.ok{color:var(--ok)}.tag.warn{color:var(--warn)}.tag.muted{color:var(--faint)}
+.empty{color:var(--faint);text-align:center;padding:18px}
+.heat-head{display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap}
+.scale{display:flex;align-items:center;gap:6px;font-size:11.5px;color:var(--muted)}
+.scale b{display:inline-block;width:120px;height:8px;border-radius:4px;background:linear-gradient(90deg,rgba(var(--heat),.08),rgba(var(--heat),1))}
+.scale s{display:inline-block;width:14px;height:8px;border:1px solid var(--border);background:repeating-linear-gradient(45deg,transparent 0 3px,var(--grid) 3px 5px);text-decoration:none}
+#tip{position:fixed;display:none;pointer-events:none;z-index:20;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:8px 10px;font-size:12px;box-shadow:0 6px 24px rgba(0,0,0,.18);max-width:300px;white-space:pre-line}
+footer{color:var(--faint);font-size:12px;padding:0 0 32px}
+@media (max-width:900px){.kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.grid2{grid-template-columns:1fr}}
+@media (max-width:520px){.wrap{padding:0 16px}.kpi strong{font-size:20px}}
+</style>
+</head>
+<body>
+<header><div class="wrap top">
+  <div class="brand"><h1 data-i18n="title"></h1><p data-i18n="subtitle"></p></div>
+  <div class="ctl">
+    <label><span class="sr" data-i18n="tz"></span> <select id="tz" aria-label="Time zone"></select></label>
+    <button id="lang" type="button" aria-label="Language"></button>
+    <button id="theme" type="button" aria-label="Theme"></button>
+  </div>
+</div></header>
+
+<main class="wrap">
+  <section class="panel">
+    <div id="drop" class="drop">
+      <div class="txt"><strong data-i18n="loadTitle"></strong><small data-i18n="loadHint"></small></div>
+      <label class="btn"><span data-i18n="choose"></span><input id="files" type="file" multiple accept=".csv,.json,.jsonl,.ndjson,.log,.txt,.0,.1,.2,.3,.4,.5,.6,.7,.8,.9"></label>
+      <button id="demo" type="button" data-i18n="demo"></button>
+      <button id="clear" type="button" data-i18n="clear"></button>
+    </div>
+    <div class="status" id="status"></div>
+    <p class="notice" data-i18n="caveat"></p>
+  </section>
+
+  <div class="bar">
+    <div class="seg" id="range" role="group" aria-label="Range">
+      <button type="button" data-range="24h">24h</button><button type="button" data-range="7d">7d</button><button type="button" data-range="all" data-i18n="all"></button>
+    </div>
+    <div class="chips" id="hosts"></div>
+    <span class="spacer"></span>
+    <button id="exRaw" type="button" data-i18n="exportRaw"></button>
+    <button id="exAna" type="button" class="primary" data-i18n="exportAnalysis"></button>
+    <button id="exCsv" type="button" data-i18n="exportCsv"></button>
+  </div>
+
+  <div class="kpis" id="kpis"></div>
+
+  <section class="panel">
+    <h2 data-i18n="leakTitle"></h2>
+    <p class="sub" data-i18n="leakSub"></p>
+    <div class="tbl"><table><thead><tr>
+      <th data-i18n="host"></th><th data-i18n="assessment"></th><th class="num" data-i18n="baseline"></th><th class="num">R²</th>
+      <th class="num" data-i18n="postGc"></th><th class="num" data-i18n="ttf"></th><th class="num" data-i18n="coverage"></th>
+      <th class="num" data-i18n="gaps"></th><th class="num" data-i18n="restarts"></th><th class="num" data-i18n="maxOld"></th>
+    </tr></thead><tbody id="leakRows"></tbody></table></div>
+    <h2 style="margin-top:16px" data-i18n="risesTitle"></h2>
+    <p class="sub" data-i18n="risesSub"></p>
+    <div class="tbl"><table><thead><tr><th data-i18n="host"></th><th data-i18n="hour"></th><th class="num" data-i18n="rise"></th><th class="num" data-i18n="floorAfter"></th><th data-i18n="nearbyEvents"></th></tr></thead><tbody id="riseRows"></tbody></table></div>
+  </section>
+
+  <div class="grid2">
+    <section class="panel"><h2 data-i18n="cOld"></h2><p class="sub" data-i18n="cOldSub"></p><canvas id="cOld"></canvas><div class="legend" data-legend></div></section>
+    <section class="panel"><h2 data-i18n="cHeap"></h2><p class="sub" data-i18n="cHeapSub"></p><canvas id="cHeap"></canvas><div class="legend" data-legend></div></section>
+    <section class="panel"><h2 data-i18n="cGct"></h2><p class="sub" data-i18n="cGctSub"></p><canvas id="cGct"></canvas><div class="legend" data-legend></div></section>
+    <section class="panel"><h2 data-i18n="cFgc"></h2><p class="sub" data-i18n="cFgcSub"></p><canvas id="cFgc"></canvas><div class="legend" data-legend></div></section>
+  </div>
+
+  <section class="panel">
+    <div class="heat-head">
+      <div><h2 data-i18n="heatTitle"></h2><p class="sub" id="heatSub"></p></div>
+      <div class="ctl">
+        <select id="heatMetric" aria-label="Metric"></select>
+        <select id="heatHost" aria-label="Host"></select>
+      </div>
+    </div>
+    <canvas id="cHeat" class="heat"></canvas>
+    <div class="scale"><span id="heatMin"></span><b></b><span id="heatMax"></span>&nbsp;&nbsp;<s></s><span data-i18n="noData"></span></div>
+  </section>
+
+  <section class="panel">
+    <h2 data-i18n="dailyTitle"></h2>
+    <p class="sub" data-i18n="dailySub"></p>
+    <div class="tbl"><table><thead><tr>
+      <th data-i18n="day"></th><th data-i18n="host"></th><th class="num" data-i18n="samples"></th><th class="num" data-i18n="coverage"></th>
+      <th class="num" data-i18n="floor"></th><th class="num" data-i18n="maxOld"></th><th class="num" data-i18n="fullGc"></th><th class="num" data-i18n="gcTime"></th><th class="num" data-i18n="events"></th>
+    </tr></thead><tbody id="dailyRows"></tbody></table></div>
+  </section>
+
+  <div class="grid2">
+    <section class="panel"><h2 data-i18n="eventsTitle"></h2><div class="tbl"><table><thead><tr><th data-i18n="time"></th><th data-i18n="host"></th><th data-i18n="event"></th><th class="num">Old %</th><th data-i18n="detail"></th></tr></thead><tbody id="eventRows"></tbody></table></div></section>
+    <section class="panel"><h2 data-i18n="gapsTitle"></h2><div class="tbl"><table><thead><tr><th data-i18n="host"></th><th data-i18n="from"></th><th data-i18n="to"></th><th class="num" data-i18n="minutes"></th></tr></thead><tbody id="gapRows"></tbody></table></div></section>
+  </div>
+</main>
+<footer class="wrap" data-i18n="footer"></footer>
+<div id="tip" role="tooltip"></div>
+
+<script>
+'use strict';
+/* Java GC Timeline: offline, single file, no network access (see CSP above).
+   Pure functions come first so tests can load this script without a DOM. */
+
+const I18N = {
+  ja: {
+    title: 'Java GC タイムライン', subtitle: 'jstat サンプルと Unified GC ログを、ブラウザ内だけで可視化します。ファイルは外部へ送信されません。',
+    tz: 'タイムゾーン', loadTitle: 'ファイルを読み込む', loadHint: 'gc_samples_*.csv / gc_azure_*.json / Unified GC ログ（絶対時刻付き）。複数ホスト・複数日をまとめて選べます。',
+    choose: 'ファイルを選択', demo: '合成デモ（7日間）', clear: 'クリア', all: '全期間',
+    exportRaw: '生データ JSON', exportAnalysis: '分析 JSON', exportCsv: 'CSV',
+    caveat: 'jstat の Old 使用率は採取時点の値で、GC 直後の生存量ではありません。使用率が高いこと、ベースラインが増えていることだけではメモリリークの証明になりません。欠測区間は線をつながずに表示します。',
+    noFiles: 'ファイル未読み込み', loaded: '{files} ファイル / {records} 件を読み込み', skipped: '（未対応行 {n} 行をスキップ）', demoStatus: '合成デモ表示中（実測値ではありません）',
+    kHosts: 'ホスト', kSamples: 'サンプル', kCoverage: '取得率 {v}', kMaxOld: '最大 Old 使用率', kMaxOldS: 'リークの証明ではありません',
+    kFull: 'Full GC', kFullS: 'jstat FGC 差分の合計', kTrend: '最大ベースライン傾き', kTrendS: '{host}・最新 PID 区間', kGc: 'GC 時間合計',
+    leakTitle: 'リーク追跡', leakSub: 'ベースライン = 1 時間ごとの最小 Old 使用量（最新の PID 区間）。その回帰直線の傾きと当てはまり（R²）を示します。GC 後ヒープは GC ログがある場合のみ。到達予測は外挿であり予言ではありません。',
+    host: 'ホスト', assessment: '判定', baseline: 'ベースライン MiB/日', postGc: 'GC 後 MiB/日', ttf: '上限到達(外挿)', coverage: '取得率', gaps: '欠測', restarts: '再起動', maxOld: '最大 Old%',
+    rising: '増加傾向', flat: '横ばい', unclear: '不明瞭', insufficient: 'データ不足',
+    risesTitle: '増加が大きかった時間帯', risesSub: 'ベースラインが前の 1 時間から最も増えた時間帯（増加傾向・不明瞭のホストを優先）。この時刻のアプリログ・デプロイ・バッチ・アクセス量と突き合わせてください。',
+    hour: '時間帯', rise: '増加 MiB', floorAfter: 'ベースライン MiB', nearbyEvents: '前後 1 時間のイベント',
+    cOld: 'Old 世代使用率', cOldSub: 'jstat OU / OC（%）。点線は注意しきい値の例。縦線は収集イベント。灰色帯は欠測。',
+    cHeap: 'ヒープ使用量', cHeapSub: '線 = jstat の使用量合計（GiB）、点 = GC ログの GC 後ヒープ（GiB）。',
+    cGct: 'サンプル間の GC 時間', cGctSub: '累積 GCT の差分（ms）。STW 停止時間だけとは限りません。',
+    cFgc: '1 時間あたりの Full GC', cFgcSub: 'jstat FGC 差分の 1 時間合計。',
+    heatTitle: '曜日 × 時刻（7×24）', heatSub: '{tz} 基準。{days} 日分を曜日・時刻ごとに集計。', noData: 'データなし',
+    hmMaxOld: '最大 Old%', hmAvgOld: '平均 Old%', hmGc: 'GC 時間（秒/時）', hmFull: 'Full GC 回数', allHosts: '全ホスト（最大）',
+    dailyTitle: '日次サマリー', dailySub: '選択中タイムゾーンの日付で集計。ベースラインは 1 日の最小 Old 使用量。',
+    day: '日付', samples: 'サンプル', floor: '最小 Old MiB', fullGc: 'Full GC', gcTime: 'GC 秒', events: 'イベント',
+    eventsTitle: '収集イベント', gapsTitle: '欠測区間', time: '時刻', event: 'イベント', detail: '詳細', from: '開始', to: '終了', minutes: '分',
+    none: 'なし', noRows: '該当なし', noMatch: 'データなし',
+    footer: 'この HTML は静的なビューアです。サーバーにも Azure にも接続しません。収集時刻は UTC、表示は選択したタイムゾーンです。認証情報・接続文字列・個人情報をログに含めないでください。',
+    themeAuto: '自動', themeLight: 'ライト', themeDark: 'ダーク', localTz: 'ブラウザ ({tz})'
+  },
+  en: {
+    title: 'Java GC Timeline', subtitle: 'Visualize jstat samples and Unified GC logs entirely in your browser. Files never leave this page.',
+    tz: 'Time zone', loadTitle: 'Load files', loadHint: 'gc_samples_*.csv / gc_azure_*.json / Unified GC logs with absolute timestamps. Select many hosts and days at once.',
+    choose: 'Choose files', demo: 'Synthetic demo (7 days)', clear: 'Clear', all: 'All',
+    exportRaw: 'Raw JSON', exportAnalysis: 'Analysis JSON', exportCsv: 'CSV',
+    caveat: 'jstat Old occupancy is a point-in-time value, not live data after GC. High occupancy or a rising baseline alone does not prove a memory leak. Gaps in collection are shown as breaks, never interpolated.',
+    noFiles: 'No files loaded', loaded: '{files} files / {records} records loaded', skipped: ' ({n} unsupported lines skipped)', demoStatus: 'Synthetic demo (not real measurements)',
+    kHosts: 'Hosts', kSamples: 'Samples', kCoverage: 'coverage {v}', kMaxOld: 'Max Old occupancy', kMaxOldS: 'Not proof of a leak',
+    kFull: 'Full GCs', kFullS: 'Sum of jstat FGC deltas', kTrend: 'Steepest baseline', kTrendS: '{host}, latest PID segment', kGc: 'Total GC time',
+    leakTitle: 'Leak tracking', leakSub: 'Baseline = lowest Old usage per hour (latest PID segment), with its regression slope and fit (R²). Post-GC uses GC logs when loaded. Time-to-limit is an extrapolation, not a prediction.',
+    host: 'Host', assessment: 'Assessment', baseline: 'Baseline MiB/day', postGc: 'Post-GC MiB/day', ttf: 'Limit (extrap.)', coverage: 'Coverage', gaps: 'Gaps', restarts: 'Restarts', maxOld: 'Max Old%',
+    rising: 'Rising', flat: 'Flat', unclear: 'Unclear', insufficient: 'Not enough data',
+    risesTitle: 'Hours with the largest increase', risesSub: 'Hours where the baseline rose most versus the previous hour (rising or unclear hosts first). Compare them with application logs, deployments, batch jobs and traffic.',
+    hour: 'Hour', rise: 'Rise MiB', floorAfter: 'Baseline MiB', nearbyEvents: 'Events within ±1 h',
+    cOld: 'Old-generation occupancy', cOldSub: 'jstat OU / OC (%). Dotted line: example threshold. Vertical lines: collector events. Grey bands: gaps.',
+    cHeap: 'Heap usage', cHeapSub: 'Line: sum of jstat used regions (GiB). Dots: heap after GC from GC logs (GiB).',
+    cGct: 'GC time between samples', cGctSub: 'Delta of cumulative GCT (ms); not necessarily stop-the-world only.',
+    cFgc: 'Full GCs per hour', cFgcSub: 'Hourly sum of jstat FGC deltas.',
+    heatTitle: 'Weekday × hour (7×24)', heatSub: 'In {tz}. {days} days aggregated by weekday and hour.', noData: 'no data',
+    hmMaxOld: 'Max Old%', hmAvgOld: 'Mean Old%', hmGc: 'GC time (s/hour)', hmFull: 'Full GC count', allHosts: 'All hosts (max)',
+    dailyTitle: 'Daily summary', dailySub: 'Grouped by date in the selected time zone. Baseline is the day\'s lowest Old usage.',
+    day: 'Date', samples: 'Samples', floor: 'Min Old MiB', fullGc: 'Full GC', gcTime: 'GC s', events: 'Events',
+    eventsTitle: 'Collector events', gapsTitle: 'Collection gaps', time: 'Time', event: 'Event', detail: 'Detail', from: 'From', to: 'To', minutes: 'Minutes',
+    none: 'none', noRows: 'Nothing to show', noMatch: 'No data',
+    footer: 'This HTML is a static viewer. It never contacts a server or Azure. Collection time is UTC; display uses the selected time zone. Keep credentials, connection strings and personal data out of logs.',
+    themeAuto: 'Auto', themeLight: 'Light', themeDark: 'Dark', localTz: 'Browser ({tz})'
+  }
+};
+const WEEKDAYS = { ja: ['月', '火', '水', '木', '金', '土', '日'], en: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] };
+const HOUR = 3600000, DAY = 86400000;
+
+const ST = {
+  samples: [], gcs: [], events: [], files: [], demo: false,
+  lang: 'ja', timeZone: 'UTC', range: '7d', hidden: new Set(), heatMetric: 'maxOld', heatHost: '*'
+};
+
+function t(key, vars) {
+  const s = (I18N[ST.lang] && I18N[ST.lang][key]) || I18N.en[key] || key;
+  return vars ? s.replace(/\{(\w+)\}/g, (_, k) => (vars[k] ?? '')) : s;
+}
+
+// ------------------------------------------------------------- parsing
+function num(v) { if (v === '' || v === null || v === undefined) return null; const n = Number(v); return Number.isFinite(n) ? n : null; }
+
+function parseCSV(text) {
+  const rows = []; let row = [], cell = '', quoted = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (ch === '"') { if (quoted && text[i + 1] === '"') { cell += '"'; i++; } else quoted = !quoted; }
+    else if (ch === ',' && !quoted) { row.push(cell); cell = ''; }
+    else if ((ch === '\n' || ch === '\r') && !quoted) {
+      if (ch === '\r' && text[i + 1] === '\n') i++;
+      row.push(cell); if (row.some(x => x !== '')) rows.push(row); row = []; cell = '';
+    } else cell += ch;
+  }
+  row.push(cell); if (row.some(x => x !== '')) rows.push(row);
+  if (!rows.length) return [];
+  const head = rows.shift().map(h => h.trim());
+  return rows.map(c => Object.fromEntries(head.map((h, i) => [h, (c[i] || '').trim()])));
+}
+
+function normSample(x, source) {
+  const t = Date.parse(x.timestamp_utc);
+  if (!Number.isFinite(t) || !x.host) return null;
+  return {
+    t, host: String(x.host), pid: num(x.pid), source,
+    old_pct: num(x.old_pct), old_used_mib: num(x.old_used_mib), old_capacity_mib: num(x.old_capacity_mib),
+    heap_used_mib: num(x.heap_used_mib), heap_capacity_mib: num(x.heap_capacity_mib),
+    gct_delta_ms: num(x.gct_delta_ms), fgc_delta: num(x.fgc_delta)
+  };
+}
+function parseSamples(text, source = '') { return parseCSV(text).map(x => normSample(x, source)).filter(Boolean); }
+
+function parseJsonl(text, source = '') {
+  const samples = [], events = []; let skipped = 0;
+  for (const line of text.split(/\r?\n/)) {
+    if (!line.trim()) continue;
+    let p; try { p = JSON.parse(line); } catch (e) { skipped++; continue; }
+    if (p && p.record_type === 'metric') { const s = normSample(p, source); if (s) samples.push(s); else skipped++; }
+    else if (p && p.record_type === 'event') {
+      const t = Date.parse(p.timestamp_utc);
+      if (Number.isFinite(t) && p.host) events.push({ t, host: String(p.host), pid: num(p.pid), event_name: String(p.event_name || ''), old_pct: num(p.old_pct), detail: p.detail == null ? '' : String(p.detail), source });
+      else skipped++;
+    } else skipped++;
+  }
+  return { samples, events, skipped };
+}
+
+function mib(value, unit) { const n = Number(value); return unit === 'K' ? n / 1024 : unit === 'M' ? n : unit === 'G' ? n * 1024 : unit === 'T' ? n * 1048576 : unit === 'B' ? n / 1048576 : null; }
+
+// "APP01_gc.log", "app01-gc.log.3", "LEAK.log" -> "APP01", "app01", "LEAK"
+function hostFromFile(name) {
+  let b = String(name).split(/[\\/]/).pop();
+  b = b.replace(/\.(log|txt|current)(\.\d+)?$/i, '').replace(/\.\d+$/, '');
+  b = b.replace(/[_.-]?gc$/i, '');
+  b = b.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 63);
+  return b || 'unknown';
+}
+
+// Subset of Unified GC logging: needs an absolute time decoration and "GC(n) ... X->Y(Z) ... N.NNNms".
+function parseGcLog(text, host, source = '') {
+  const gcs = []; let skipped = 0;
+  const rx = /GC\((\d+)\)\s+(.*?)(\d+(?:\.\d+)?)([BKMGT])->(\d+(?:\.\d+)?)([BKMGT])\((\d+(?:\.\d+)?)([BKMGT])\)\s+(\d+(?:\.\d+)?)ms/;
+  for (const line of text.split(/\r?\n/)) {
+    if (!line.trim()) continue;
+    const m = line.match(rx);
+    if (!m) continue; // not a heap summary line (phases, metaspace, ...) - not counted as skipped
+    const tm = line.match(/\[(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?(?:Z|[+-]\d\d:?\d\d)?)\]/);
+    if (!tm) { skipped++; continue; } // heap line but only uptime decoration: cannot place in time
+    const t = Date.parse(tm[1].replace(/([+-]\d\d)(\d\d)$/, '$1:$2'));
+    if (!Number.isFinite(t)) { skipped++; continue; }
+    const desc = m[2];
+    gcs.push({
+      t, host, source, id: Number(m[1]),
+      kind: /Pause Full|Full GC/.test(desc) ? 'Full' : /Young/.test(desc) ? 'Young' : /Mixed/.test(desc) ? 'Mixed' : 'Other',
+      before_mib: mib(m[3], m[4]), after_mib: mib(m[5], m[6]), capacity_mib: mib(m[7], m[8]), pause_ms: Number(m[9])
+    });
+  }
+  return { gcs, skipped };
+}
+
+// ------------------------------------------------------------- time helpers
+const fmtCache = new Map();
+function fmt(tz, kind) {
+  const k = tz + '|' + kind;
+  if (!fmtCache.has(k)) {
+    const o = kind === 'parts'
+      ? { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', weekday: 'short', hourCycle: 'h23' }
+      : kind === 'short'
+        ? { timeZone: tz, month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }
+        : { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' };
+    fmtCache.set(k, new Intl.DateTimeFormat('en-CA', o));
+  }
+  return fmtCache.get(k);
+}
+const WD = { Mon: 0, Tue: 1, Wed: 2, Thu: 3, Fri: 4, Sat: 5, Sun: 6 };
+function tzParts(ms, tz) {
+  const p = {}; for (const x of fmt(tz, 'parts').formatToParts(new Date(ms))) p[x.type] = x.value;
+  return { date: `${p.year}-${p.month}-${p.day}`, hour: Number(p.hour) % 24, wd: WD[p.weekday] };
+}
+function fmtTime(ms, tz, short) { return fmt(tz, short ? 'short' : 'long').format(new Date(ms)).replace(',', ''); }
+function isoUtc(ms) { return new Date(ms).toISOString().replace('.000Z', 'Z'); }
+
+// ------------------------------------------------------------- analysis
+function median(a) { if (!a.length) return null; const s = [...a].sort((x, y) => x - y), m = s.length >> 1; return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; }
+function quantile(a, q) { if (!a.length) return null; const s = [...a].sort((x, y) => x - y); return s[Math.min(s.length - 1, Math.floor(q * (s.length - 1)))]; }
+function linreg(pts) {
+  const n = pts.length; if (n < 2) return null;
+  let sx = 0, sy = 0; for (const p of pts) { sx += p.x; sy += p.y; }
+  const mx = sx / n, my = sy / n; let sxx = 0, sxy = 0, syy = 0;
+  for (const p of pts) { const dx = p.x - mx, dy = p.y - my; sxx += dx * dx; sxy += dx * dy; syy += dy * dy; }
+  if (sxx === 0) return null;
+  const slope = sxy / sxx;
+  return { slope, intercept: my - slope * mx, r2: syy === 0 ? 1 : (sxy * sxy) / (sxx * syy), n };
+}
+function byHost(list) { const m = new Map(); for (const x of list) { if (!m.has(x.host)) m.set(x.host, []); m.get(x.host).push(x); } return m; }
+function sampleInterval(ss) { const d = []; for (let i = 1; i < ss.length; i++) { const v = ss[i].t - ss[i - 1].t; if (v > 0) d.push(v); } return median(d); }
+
+function detectGaps(ss, intervalMs) {
+  if (!intervalMs) return [];
+  const lim = Math.max(2.5 * intervalMs, intervalMs + 30000), out = [];
+  for (let i = 1; i < ss.length; i++) {
+    const d = ss[i].t - ss[i - 1].t;
+    if (d > lim) out.push({ host: ss[i].host, start: ss[i - 1].t, end: ss[i].t, minutes: Math.round(d / 60000) });
+  }
+  return out;
+}
+
+// Lowest Old usage per clock hour: the closest thing to a post-GC baseline that jstat can give.
+function hourlyFloor(ss) {
+  const m = new Map();
+  for (const s of ss) {
+    if (!Number.isFinite(s.old_used_mib)) continue;
+    const h = Math.floor(s.t / HOUR) * HOUR, cur = m.get(h);
+    if (!cur || s.old_used_mib < cur.y) m.set(h, { t: h, y: s.old_used_mib, n: (cur ? cur.n : 0) + 1 }); else cur.n++;
+  }
+  return [...m.values()].sort((a, b) => a.t - b.t);
+}
+
+function analyzeHost(host, ss, gcs, events) {
+  ss = [...ss].sort((a, b) => a.t - b.t);
+  const intervalMs = sampleInterval(ss);
+  const first = ss.length ? ss[0].t : null, last = ss.length ? ss[ss.length - 1].t : null;
+  const expected = intervalMs && last > first ? Math.round((last - first) / intervalMs) + 1 : ss.length;
+  const gaps = detectGaps(ss, intervalMs);
+  const restarts = [];
+  for (let i = 1; i < ss.length; i++) if (ss[i].pid !== null && ss[i - 1].pid !== null && ss[i].pid !== ss[i - 1].pid) restarts.push({ t: ss[i].t, from_pid: ss[i - 1].pid, to_pid: ss[i].pid });
+  const resetEvents = events.filter(e => e.event_name === 'JAVA_GC_COUNTER_RESET').map(e => e.t);
+  const segStart = Math.max(restarts.length ? restarts[restarts.length - 1].t : -Infinity, resetEvents.length ? Math.max(...resetEvents) : -Infinity);
+  const seg = ss.filter(s => s.t >= segStart);
+  const floors = hourlyFloor(seg).filter(f => f.n >= 3);
+  const caps = ss.map(s => s.old_capacity_mib).filter(Number.isFinite);
+  const capacity = caps.length ? Math.max(...caps) : null;
+  let baseline = null;
+  const spanH = floors.length ? (floors[floors.length - 1].t - floors[0].t) / HOUR : 0;
+  if (floors.length >= 6 && spanH >= 6) {
+    const r = linreg(floors.map(f => ({ x: f.t / DAY, y: f.y })));
+    if (r) baseline = { slope_mib_per_day: r.slope, r2: r.r2, hourly_points: r.n, segment_start_utc: isoUtc(floors[0].t), last_floor_mib: floors[floors.length - 1].y };
+  }
+  const gseg = gcs.filter(g => g.t >= segStart && Number.isFinite(g.after_mib));
+  const fulls = gseg.filter(g => g.kind === 'Full');
+  let postGc = null;
+  const pg = fulls.length >= 4 ? fulls.map(g => ({ x: g.t / DAY, y: g.after_mib })) : hourlyFloor(gseg.map(g => ({ t: g.t, old_used_mib: g.after_mib }))).map(f => ({ x: f.t / DAY, y: f.y }));
+  if (pg.length >= 6 && (pg[pg.length - 1].x - pg[0].x) * 24 >= 6) {
+    const r = linreg(pg); if (r) postGc = { slope_mib_per_day: r.slope, r2: r.r2, points: r.n, basis: fulls.length >= 4 ? 'full_gc_after' : 'hourly_min_after_gc' };
+  }
+  let assessment = 'insufficient';
+  if (baseline) {
+    const rel = capacity ? baseline.slope_mib_per_day / capacity : null;
+    if (baseline.slope_mib_per_day > 0 && baseline.r2 >= 0.5 && (rel === null || rel >= 0.01)) assessment = 'rising';
+    else if (rel !== null ? Math.abs(rel) < 0.01 : Math.abs(baseline.slope_mib_per_day) < 1) assessment = 'flat';
+    else assessment = 'unclear';
+  }
+  let ttfHours = null;
+  if (assessment === 'rising' && capacity) ttfHours = Math.max(0, (capacity - baseline.last_floor_mib) / baseline.slope_mib_per_day * 24);
+  const rises = [];
+  for (let i = 1; i < floors.length; i++) if (floors[i].t - floors[i - 1].t === HOUR) rises.push({ host, hour_start: floors[i].t, rise_mib: floors[i].y - floors[i - 1].y, floor_mib: floors[i].y });
+  rises.sort((a, b) => b.rise_mib - a.rise_mib);
+  const olds = ss.map(s => s.old_pct).filter(Number.isFinite);
+  return {
+    host, first, last, samples: ss.length, interval_sec: intervalMs ? Math.round(intervalMs / 1000) : null,
+    coverage_pct: expected ? Math.min(100, 100 * ss.length / expected) : null,
+    gaps, restarts, counter_resets: resetEvents.length,
+    old_pct_max: olds.length ? Math.max(...olds) : null, old_pct_p95: quantile(olds, 0.95),
+    full_gc_count: ss.reduce((a, s) => a + (Number.isFinite(s.fgc_delta) ? s.fgc_delta : 0), 0),
+    gc_time_sec: ss.reduce((a, s) => a + (Number.isFinite(s.gct_delta_ms) ? s.gct_delta_ms : 0), 0) / 1000,
+    old_capacity_mib: capacity, baseline, post_gc: postGc, assessment, time_to_limit_hours: ttfHours,
+    top_rises: rises.filter(r => r.rise_mib > 0).slice(0, 5), gc_log_events: gcs.length
+  };
+}
+
+function inRange(list, r) { return list.filter(x => x.t >= r.from && x.t <= r.to); }
+function dataEnd() { let m = -Infinity; for (const l of [ST.samples, ST.gcs, ST.events]) for (const x of l) if (x.t > m) m = x.t; return Number.isFinite(m) ? m : null; }
+function currentRange() {
+  const end = dataEnd(); if (end === null) return null;
+  let start = Infinity; for (const l of [ST.samples, ST.gcs, ST.events]) for (const x of l) if (x.t < start) start = x.t;
+  const from = ST.range === '24h' ? end - DAY : ST.range === '7d' ? end - 7 * DAY : start;
+  return { from: Math.max(from, start), to: end };
+}
+function visible(list) { return list.filter(x => !ST.hidden.has(x.host)); }
+
+function analyze(samples, gcs, events, range) {
+  const s = inRange(samples, range), g = inRange(gcs, range), e = inRange(events, range);
+  const sh = byHost(s), gh = byHost(g), eh = byHost(e);
+  const hosts = [...new Set([...sh.keys(), ...gh.keys()])].sort();
+  return { hosts: hosts.map(h => analyzeHost(h, sh.get(h) || [], gh.get(h) || [], eh.get(h) || [])), samples: s, gcs: g, events: e };
+}
+
+function daily(samples, events, tz, analysisHosts) {
+  const iv = new Map(analysisHosts.map(h => [h.host, h.interval_sec]));
+  const m = new Map();
+  for (const s of samples) {
+    const d = tzParts(s.t, tz).date, k = d + '|' + s.host;
+    if (!m.has(k)) m.set(k, { date: d, host: s.host, samples: 0, min_old_used_mib: null, max_old_pct: null, full_gc: 0, gc_sec: 0, events: 0 });
+    const r = m.get(k); r.samples++;
+    if (Number.isFinite(s.old_used_mib)) r.min_old_used_mib = r.min_old_used_mib === null ? s.old_used_mib : Math.min(r.min_old_used_mib, s.old_used_mib);
+    if (Number.isFinite(s.old_pct)) r.max_old_pct = r.max_old_pct === null ? s.old_pct : Math.max(r.max_old_pct, s.old_pct);
+    if (Number.isFinite(s.fgc_delta)) r.full_gc += s.fgc_delta;
+    if (Number.isFinite(s.gct_delta_ms)) r.gc_sec += s.gct_delta_ms / 1000;
+  }
+  for (const e of events) { const k = tzParts(e.t, tz).date + '|' + e.host; if (m.has(k)) m.get(k).events++; }
+  return [...m.values()].map(r => ({ ...r, coverage_pct: iv.get(r.host) ? Math.min(100, 100 * r.samples * iv.get(r.host) / 86400) : null }))
+    .sort((a, b) => a.date < b.date ? 1 : a.date > b.date ? -1 : a.host.localeCompare(b.host));
+}
+
+// 7 x 24 cells; value null = no data (never shown as zero).
+function heatmap(samples, tz, metric, host) {
+  const cells = Array.from({ length: 7 }, () => Array.from({ length: 24 }, () => ({ v: null, n: 0, sum: 0, hours: new Set() })));
+  for (const s of samples) {
+    if (host !== '*' && s.host !== host) continue;
+    const p = tzParts(s.t, tz), c = cells[p.wd][p.hour];
+    let v = null;
+    if (metric === 'maxOld' || metric === 'avgOld') v = s.old_pct;
+    else if (metric === 'gc') v = Number.isFinite(s.gct_delta_ms) ? s.gct_delta_ms / 1000 : null;
+    else if (metric === 'full') v = s.fgc_delta;
+    if (!Number.isFinite(v)) continue;
+    c.n++; c.sum += v; c.hours.add(p.date + '|' + s.host);
+    if (metric === 'maxOld') c.v = c.v === null ? v : Math.max(c.v, v);
+  }
+  for (const row of cells) for (const c of row) {
+    if (!c.n) continue;
+    if (metric === 'avgOld') c.v = c.sum / c.n;
+    else if (metric === 'gc' || metric === 'full') c.v = c.sum / c.hours.size; // per host-hour
+  }
+  return cells.map(r => r.map(c => ({ v: c.v, n: c.n })));
+}
+
+const CAVEATS = [
+  'jstat old_pct is sampled at a point in time and is not live data after GC.',
+  'baseline = lowest old_used_mib per clock hour in the latest PID segment; a rising baseline is consistent with a leak or with a growing working set (caches, sessions) and is not proof of either.',
+  'time_to_limit_hours is a linear extrapolation of the baseline to the observed old capacity, not a prediction.',
+  'GCT deltas are cumulative GC time, not exact stop-the-world time.',
+  'Gaps are reported, never filled. Coverage below 90% weakens every trend.',
+  'Old capacity may change at runtime (G1 region sizing), so old_pct can move without a change in used memory.'
+];
+
+function buildRawExport(range) {
+  const pick = s => ({ timestamp_utc: isoUtc(s.t), host: s.host, pid: s.pid, old_pct: s.old_pct, old_used_mib: s.old_used_mib, old_capacity_mib: s.old_capacity_mib, heap_used_mib: s.heap_used_mib, heap_capacity_mib: s.heap_capacity_mib, gct_delta_ms: s.gct_delta_ms, fgc_delta: s.fgc_delta, source: s.source });
+  return {
+    schema: 'java-gc-timeline/raw@1', generated_utc: isoUtc(Date.now()), synthetic_demo: ST.demo,
+    range: range ? { from_utc: isoUtc(range.from), to_utc: isoUtc(range.to), selection: ST.range } : null,
+    files: ST.files,
+    samples: (range ? inRange(ST.samples, range) : ST.samples).map(pick),
+    gc_events: (range ? inRange(ST.gcs, range) : ST.gcs).map(g => ({ timestamp_utc: new Date(g.t).toISOString(), host: g.host, gc_id: g.id, kind: g.kind, before_mib: g.before_mib, after_mib: g.after_mib, capacity_mib: g.capacity_mib, pause_ms: g.pause_ms, source: g.source })),
+    collector_events: (range ? inRange(ST.events, range) : ST.events).map(e => ({ timestamp_utc: isoUtc(e.t), host: e.host, pid: e.pid, event_name: e.event_name, old_pct: e.old_pct, detail: e.detail, source: e.source }))
+  };
+}
+
+function buildAnalysisExport(range) {
+  const a = analyze(ST.samples, ST.gcs, ST.events, range);
+  const counts = {}; for (const e of a.events) counts[e.event_name] = (counts[e.event_name] || 0) + 1;
+  return {
+    schema: 'java-gc-timeline/analysis@1', generated_utc: isoUtc(Date.now()), synthetic_demo: ST.demo,
+    range: { from_utc: isoUtc(range.from), to_utc: isoUtc(range.to), selection: ST.range }, display_time_zone: ST.timeZone,
+    caveats: CAVEATS,
+    hosts: a.hosts.map(h => ({
+      ...h, first: undefined, last: undefined,
+      first_utc: h.first === null ? null : isoUtc(h.first), last_utc: h.last === null ? null : isoUtc(h.last),
+      gaps: h.gaps.map(g => ({ start_utc: isoUtc(g.start), end_utc: isoUtc(g.end), minutes: g.minutes })),
+      restarts: h.restarts.map(r => ({ at_utc: isoUtc(r.t), from_pid: r.from_pid, to_pid: r.to_pid })),
+      top_rises: h.top_rises.map(r => ({ hour_start_utc: isoUtc(r.hour_start), rise_mib: r.rise_mib, floor_mib: r.floor_mib, events_within_1h: a.events.filter(e => e.host === h.host && Math.abs(e.t - r.hour_start - HOUR / 2) <= 1.5 * HOUR).map(e => e.event_name) }))
+    })),
+    daily: daily(a.samples, a.events, ST.timeZone, a.hosts),
+    heatmap: Object.fromEntries(['maxOld', 'avgOld', 'gc', 'full'].map(m => [m, { time_zone: ST.timeZone, rows: 'Mon..Sun', cols: '00..23', cells: heatmap(a.samples, ST.timeZone, m, '*').map(r => r.map(c => c.v)) }])),
+    event_counts: counts
+  };
+}
+
+// ------------------------------------------------------------- demo data (synthetic)
+function makeDemo() {
+  const samples = [], gcs = [], events = [];
+  const end = Date.UTC(2026, 0, 19, 0, 0, 0), start = end - 7 * DAY, cap = 3072;
+  let seed = 7; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  const load = ms => { const d = new Date(ms + 9 * HOUR), h = d.getUTCHours(), wd = d.getUTCDay(); const work = wd >= 1 && wd <= 5; return (work ? 0.25 : 0.12) + (work && h >= 9 && h < 19 ? 0.75 : h >= 7 && h < 23 ? 0.2 : 0); };
+  for (const [host, leak, pid0] of [['APP01', true, 4101], ['APP02', false, 5202]]) {
+    let floor = 620, used = 700, pid = pid0, fgcTot = 0, high = 0, active = false;
+    events.push({ t: start, host, pid, event_name: 'JAVA_GC_COLLECTOR_STARTED', old_pct: null, detail: 'DEMO', source: 'demo' });
+    for (let ms = start; ms < end; ms += 60000) {
+      if (!leak && ms >= start + 2 * DAY + 3 * HOUR && ms < start + 2 * DAY + 6 * HOUR) {
+        if (ms === start + 2 * DAY + 3 * HOUR) events.push({ t: ms, host, pid, event_name: 'JAVA_GC_COLLECTOR_FAILED', old_pct: null, detail: 'DEMO: jstat failed 3 consecutive samples', source: 'demo' });
+        continue;
+      }
+      if (!leak && ms === start + 2 * DAY + 6 * HOUR) events.push({ t: ms, host, pid, event_name: 'JAVA_GC_COLLECTOR_STARTED', old_pct: null, detail: 'DEMO', source: 'demo' });
+      if (leak && ms === start + 4 * DAY + 18 * HOUR) { pid = 4377; floor = 620; used = 700; fgcTot = 0; active = false; high = 0; events.push({ t: ms, host, pid, event_name: 'JAVA_GC_COLLECTOR_STARTED', old_pct: null, detail: 'DEMO: after JVM restart', source: 'demo' }); }
+      const L = load(ms);
+      if (leak) floor += 0.42 * L * (0.6 + rnd() * 0.8); else floor += (640 - floor) * 0.01 + (rnd() - 0.5) * 2;
+      used += 4 + 14 * L * rnd();
+      let fgc = 0, gct = 4 + 30 * L * rnd();
+      if (used > floor + 420 + 200 * rnd()) { gcs.push({ t: ms + 20000, host, source: 'demo', id: gcs.length, kind: 'Mixed', before_mib: used + 900, after_mib: floor + 60 + 30 * rnd() + 300, capacity_mib: 4096, pause_ms: 30 + 40 * rnd() }); used = floor + 30 * rnd(); gct += 60; }
+      if (used / cap > 0.93) { fgc = 1; fgcTot++; gct += 900 + 600 * rnd(); used = floor + 10; gcs.push({ t: ms + 30000, host, source: 'demo', id: gcs.length, kind: 'Full', before_mib: cap * 0.95 + 900, after_mib: floor + 300, capacity_mib: 4096, pause_ms: 900 + 600 * rnd() }); }
+      used = Math.min(used, cap * 0.99);
+      const pct = 100 * used / cap;
+      samples.push({ t: ms, host, pid, source: 'demo', old_pct: Math.round(pct * 100) / 100, old_used_mib: used, old_capacity_mib: cap, heap_used_mib: used + 300 + 600 * L * rnd(), heap_capacity_mib: 4096, gct_delta_ms: Math.round(gct), fgc_delta: fgc });
+      high = pct >= 85 ? high + 1 : 0;
+      if (!active && high >= 3) { active = true; events.push({ t: ms, host, pid, event_name: 'JAVA_GC_OLD_HIGH', old_pct: Math.round(pct * 10) / 10, detail: 'DEMO', source: 'demo' }); }
+      if (active && pct < 75) { active = false; events.push({ t: ms, host, pid, event_name: 'JAVA_GC_OLD_RECOVERED', old_pct: Math.round(pct * 10) / 10, detail: 'DEMO', source: 'demo' }); }
+    }
+  }
+  return { samples, gcs, events };
+}
+
+// ------------------------------------------------------------- rendering
+const $ = id => document.getElementById(id);
+function css(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
+function hostColor(host) {
+  const hosts = [...new Set([...ST.samples, ...ST.gcs].map(x => x.host))].sort();
+  const i = hosts.indexOf(host);
+  return css('--s' + ((i < 0 ? 0 : i) % 6 + 1));
+}
+function el(tag, attrs, ...kids) {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs || {})) { if (k === 'class') e.className = v; else if (k === 'style') e.style.cssText = v; else e.setAttribute(k, v); }
+  for (const k of kids) e.append(k instanceof Node ? k : document.createTextNode(k == null ? '' : String(k)));
+  return e;
+}
+function fmtNum(v, d = 1) { return v === null || v === undefined || !Number.isFinite(v) ? '—' : v.toLocaleString(ST.lang === 'ja' ? 'ja-JP' : 'en-US', { maximumFractionDigits: d, minimumFractionDigits: d }); }
+function fmtSigned(v, d = 1) { return !Number.isFinite(v) ? '—' : (v > 0 ? '+' : '') + fmtNum(v, d); }
+function fmtDur(h) { if (!Number.isFinite(h)) return '—'; return h < 48 ? fmtNum(h, 0) + ' h' : fmtNum(h / 24, 1) + (ST.lang === 'ja' ? ' 日' : ' d'); }
+
+function setupCanvas(c, h) {
+  const r = c.getBoundingClientRect(), w = Math.max(300, r.width || 600), dpr = window.devicePixelRatio || 1;
+  c.width = Math.round(w * dpr); c.height = Math.round(h * dpr);
+  const ctx = c.getContext('2d'); ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, w, h);
+  return { ctx, w, h };
+}
+
+const charts = {};
+function drawChart(id, cfg) {
+  const c = $(id), H = 240, { ctx, w, h } = setupCanvas(c, H);
+  const L = 52, R = 14, T = 12, B = 30, pw = w - L - R, ph = h - T - B;
+  const { range, series, bars, dots, gaps, markers, minY = 0, maxY: fixedMax, unit = '', threshold } = cfg;
+  const all = [].concat(...series.map(s => s.points.map(p => p.y)), ...(dots || []).map(s => s.points.map(p => p.y)), ...(bars || []).map(s => s.points.map(p => p.y)));
+  charts[id] = null;
+  if (!all.length) { ctx.fillStyle = css('--faint'); ctx.font = '13px system-ui'; ctx.textAlign = 'center'; ctx.fillText(t('noMatch'), w / 2, h / 2); return; }
+  const maxY = fixedMax ?? (Math.max(...all) * 1.1 || 1);
+  const xf = v => L + (v - range.from) / Math.max(1, range.to - range.from) * pw;
+  const yf = v => T + ph - (v - minY) / (maxY - minY) * ph;
+  ctx.font = '11px system-ui'; ctx.lineWidth = 1;
+  for (const g of gaps || []) { ctx.fillStyle = css('--gap'); const a = Math.max(L, xf(g.start)), b = Math.min(w - R, xf(g.end)); if (b > a) ctx.fillRect(a, T, Math.max(1, b - a), ph); }
+  for (let i = 0; i <= 4; i++) {
+    const v = minY + (maxY - minY) * i / 4, y = yf(v);
+    ctx.strokeStyle = css('--grid'); ctx.beginPath(); ctx.moveTo(L, y); ctx.lineTo(w - R, y); ctx.stroke();
+    ctx.fillStyle = css('--faint'); ctx.textAlign = 'right'; ctx.fillText(fmtNum(v, maxY < 10 ? 1 : 0), L - 8, y + 4);
+  }
+  const ticks = Math.max(2, Math.min(7, Math.floor(pw / 110)));
+  for (let i = 0; i <= ticks; i++) {
+    const tv = range.from + (range.to - range.from) * i / ticks;
+    ctx.fillStyle = css('--faint'); ctx.textAlign = i === 0 ? 'left' : i === ticks ? 'right' : 'center';
+    ctx.fillText(fmtTime(tv, ST.timeZone, true), xf(tv), h - 9);
+  }
+  if (threshold !== undefined) { ctx.save(); ctx.setLineDash([4, 4]); ctx.strokeStyle = css('--threshold'); ctx.beginPath(); ctx.moveTo(L, yf(threshold)); ctx.lineTo(w - R, yf(threshold)); ctx.stroke(); ctx.restore(); }
+  for (const m of markers || []) { ctx.save(); ctx.strokeStyle = m.color; ctx.globalAlpha = .7; ctx.setLineDash(m.dash ? [2, 3] : []); ctx.beginPath(); ctx.moveTo(xf(m.t), T); ctx.lineTo(xf(m.t), T + ph); ctx.stroke(); ctx.restore(); }
+  for (const s of bars || []) {
+    const n = (bars || []).length, bw = Math.max(1, pw / Math.max(1, (range.to - range.from) / HOUR) / n - 0.5), idx = bars.indexOf(s);
+    ctx.fillStyle = s.color;
+    for (const p of s.points) if (p.y > 0) ctx.fillRect(xf(p.t) + idx * bw, yf(p.y), bw, yf(minY) - yf(p.y));
+  }
+  for (const s of series) {
+    if (!s.points.length) continue;
+    ctx.strokeStyle = s.color; ctx.lineWidth = 1.6; ctx.lineJoin = 'round'; ctx.beginPath();
+    // min/max decimation per pixel column; break the line across gaps
+    let lastX = null, colMin = null, colMax = null, prevT = null, pen = false;
+    const flush = x => { if (colMin === null) return; if (!pen) { ctx.moveTo(x, yf(colMin)); pen = true; } else ctx.lineTo(x, yf(colMin)); if (colMax !== colMin) ctx.lineTo(x, yf(colMax)); colMin = colMax = null; };
+    for (const p of s.points) {
+      const x = Math.round(xf(p.t));
+      if (prevT !== null && s.breakMs && p.t - prevT > s.breakMs) { flush(lastX); pen = false; }
+      else if (lastX !== null && x !== lastX) flush(lastX);
+      colMin = colMin === null ? p.y : Math.min(colMin, p.y); colMax = colMax === null ? p.y : Math.max(colMax, p.y);
+      lastX = x; prevT = p.t;
+    }
+    flush(lastX); ctx.stroke();
+  }
+  for (const s of dots || []) { ctx.fillStyle = s.color; for (const p of s.points) { ctx.beginPath(); ctx.arc(xf(p.t), yf(p.y), 2, 0, 7); ctx.fill(); } }
+  charts[id] = { xf, yf, L, R, w, series: [...series, ...(dots || []), ...(bars || [])], unit, markers };
+}
+
+function nearest(points, t0) { let lo = 0, hi = points.length - 1; if (hi < 0) return null; while (lo < hi) { const m = (lo + hi) >> 1; if (points[m].t < t0) lo = m + 1; else hi = m; } const a = points[lo], b = points[lo - 1]; return b && Math.abs(b.t - t0) < Math.abs(a.t - t0) ? b : a; }
+function attachTip(id) {
+  const c = $(id), tip = $('tip');
+  c.onmousemove = ev => {
+    const ch = charts[id]; if (!ch) return;
+    const r = c.getBoundingClientRect(), mx = ev.clientX - r.left;
+    if (mx < ch.L || mx > ch.w - ch.R) { tip.style.display = 'none'; return; }
+    const lines = [];
+    let tt = null;
+    for (const s of ch.series) {
+      if (!s.points.length) continue;
+      const best = nearest(s.points, invX(ch, mx));
+      const bd = best ? Math.abs(ch.xf(best.t) - mx) : Infinity;
+      if (bd < 18) { lines.push(`${s.name}  ${fmtNum(best.y, 2)}${ch.unit}`); tt = tt === null ? best.t : tt; }
+    }
+    if (!lines.length) { tip.style.display = 'none'; return; }
+    tip.textContent = fmtTime(tt, ST.timeZone) + '\n' + lines.join('\n');
+    tip.style.left = Math.min(ev.clientX + 14, innerWidth - 300) + 'px'; tip.style.top = Math.min(ev.clientY + 14, innerHeight - 90) + 'px'; tip.style.display = 'block';
+  };
+  c.onmouseleave = () => { tip.style.display = 'none'; };
+}
+let lastRange = null;
+function invX(ch, mx) { return lastRange.from + (mx - ch.L) / (ch.w - ch.L - ch.R) * (lastRange.to - lastRange.from); }
+
+function drawHeat(cells, metric) {
+  const c = $('cHeat'), { ctx, w, h } = setupCanvas(c, 230);
+  const L = 34, T = 18, B = 6, cw = (w - L - 6) / 24, chh = (h - T - B) / 7;
+  const vals = cells.flat().map(x => x.v).filter(v => v !== null);
+  const lo = vals.length ? Math.min(...vals) : 0, hi = vals.length ? Math.max(...vals) : 1;
+  const rgb = css('--heat');
+  ctx.font = '11px system-ui'; ctx.fillStyle = css('--faint'); ctx.textAlign = 'center';
+  for (let hr = 0; hr < 24; hr += 3) ctx.fillText(String(hr).padStart(2, '0'), L + hr * cw + cw / 2, 12);
+  ctx.textAlign = 'right';
+  for (let d = 0; d < 7; d++) ctx.fillText(WEEKDAYS[ST.lang][d], L - 8, T + d * chh + chh / 2 + 4);
+  for (let d = 0; d < 7; d++) for (let hr = 0; hr < 24; hr++) {
+    const x = L + hr * cw + 1, y = T + d * chh + 1, cv = cells[d][hr];
+    if (cv.v === null) {
+      ctx.strokeStyle = css('--grid'); ctx.lineWidth = 1; ctx.strokeRect(x + .5, y + .5, cw - 3, chh - 3);
+      ctx.save(); ctx.beginPath(); ctx.rect(x, y, cw - 2, chh - 2); ctx.clip();
+      for (let k = -chh; k < cw; k += 5) { ctx.beginPath(); ctx.moveTo(x + k, y + chh); ctx.lineTo(x + k + chh, y); ctx.stroke(); }
+      ctx.restore();
+    } else {
+      const a = hi > lo ? .08 + .92 * (cv.v - lo) / (hi - lo) : .6;
+      ctx.fillStyle = `rgba(${rgb},${a})`; ctx.beginPath();
+      if (ctx.roundRect) ctx.roundRect(x, y, cw - 2, chh - 2, 3); else ctx.rect(x, y, cw - 2, chh - 2);
+      ctx.fill();
+    }
+  }
+  const unit = metric === 'gc' ? ' s' : metric === 'full' ? '' : '%';
+  $('heatMin').textContent = vals.length ? fmtNum(lo, 1) + unit : '—';
+  $('heatMax').textContent = vals.length ? fmtNum(hi, 1) + unit : '—';
+  c.onmousemove = ev => {
+    const r = c.getBoundingClientRect(), hr = Math.floor((ev.clientX - r.left - L) / cw), d = Math.floor((ev.clientY - r.top - T) / chh), tip = $('tip');
+    if (hr < 0 || hr > 23 || d < 0 || d > 6) { tip.style.display = 'none'; return; }
+    const cv = cells[d][hr];
+    tip.textContent = `${WEEKDAYS[ST.lang][d]} ${String(hr).padStart(2, '0')}:00\n${cv.v === null ? t('noData') : fmtNum(cv.v, 2) + unit}  (n=${cv.n})`;
+    tip.style.left = Math.min(ev.clientX + 14, innerWidth - 300) + 'px'; tip.style.top = (ev.clientY + 14) + 'px'; tip.style.display = 'block';
+  };
+  c.onmouseleave = () => { $('tip').style.display = 'none'; };
+}
+
+function fillRows(tbody, rows, cols) {
+  tbody.textContent = '';
+  if (!rows.length) { tbody.append(el('tr', {}, el('td', { colspan: String(cols), class: 'empty' }, t('noRows')))); return; }
+  for (const r of rows) tbody.append(el('tr', {}, ...r.map(c => c instanceof Node ? el('td', {}, c) : el('td', typeof c === 'object' && c && c.num ? { class: 'num' } : {}, typeof c === 'object' && c && 'v' in c ? c.v : c))));
+}
+const N = v => ({ v, num: true });
+
+function render() {
+  if (typeof document === 'undefined') return;
+  document.documentElement.lang = ST.lang;
+  for (const e of document.querySelectorAll('[data-i18n]')) e.textContent = t(e.dataset.i18n);
+  for (const b of document.querySelectorAll('#range button')) b.setAttribute('aria-pressed', String(b.dataset.range === ST.range));
+  $('lang').textContent = ST.lang === 'ja' ? 'English' : '日本語';
+  const th = document.documentElement.dataset.theme || 'auto';
+  $('theme').textContent = th === 'auto' ? t('themeAuto') : th === 'light' ? t('themeLight') : t('themeDark');
+  renderTzOptions();
+  renderHeatOptions();
+
+  const range = currentRange(); lastRange = range;
+  const allHosts = [...new Set([...ST.samples, ...ST.gcs].map(x => x.host))].sort();
+  const chips = $('hosts'); chips.textContent = '';
+  for (const hst of allHosts) {
+    const b = el('button', { type: 'button', class: 'chip', 'aria-pressed': String(!ST.hidden.has(hst)) }, el('span', { class: 'dot', style: 'background:' + hostColor(hst) }), hst);
+    b.onclick = () => { if (ST.hidden.has(hst)) ST.hidden.delete(hst); else ST.hidden.add(hst); render(); };
+    chips.append(b);
+  }
+  if (!ST.files.length && !ST.demo) $('status').textContent = t('noFiles');
+
+  const a = range ? analyze(visible(ST.samples), visible(ST.gcs), visible(ST.events), range) : { hosts: [], samples: [], gcs: [], events: [] };
+  const hosts = a.hosts;
+
+  // KPIs
+  const totalSamples = hosts.reduce((x, h) => x + h.samples, 0);
+  const cov = hosts.filter(h => h.coverage_pct !== null);
+  const steep = hosts.filter(h => h.baseline).sort((x, y) => y.baseline.slope_mib_per_day - x.baseline.slope_mib_per_day)[0];
+  const maxOld = hosts.map(h => h.old_pct_max).filter(Number.isFinite);
+  const k = [
+    [t('kHosts'), String(hosts.length), range ? fmtTime(range.from, ST.timeZone, true) + ' – ' + fmtTime(range.to, ST.timeZone, true) : '—'],
+    [t('kSamples'), totalSamples.toLocaleString(), cov.length ? t('kCoverage', { v: fmtNum(cov.reduce((x, h) => x + h.coverage_pct, 0) / cov.length, 1) + '%' }) : '—'],
+    [t('kMaxOld'), maxOld.length ? fmtNum(Math.max(...maxOld), 1) + '%' : '—', t('kMaxOldS')],
+    [t('kFull'), hosts.reduce((x, h) => x + h.full_gc_count, 0).toLocaleString(), t('kGc') + ' ' + fmtNum(hosts.reduce((x, h) => x + h.gc_time_sec, 0), 1) + ' s'],
+    [t('kTrend'), steep ? fmtSigned(steep.baseline.slope_mib_per_day, 0) + ' MiB/' + (ST.lang === 'ja' ? '日' : 'day') : '—', steep ? t('kTrendS', { host: steep.host }) : t('insufficient')]
+  ];
+  const kp = $('kpis'); kp.textContent = '';
+  for (const [l, v, s] of k) kp.append(el('div', { class: 'kpi' }, el('span', {}, l), el('strong', { title: v }, v), el('small', {}, s)));
+
+  // Leak table
+  const tagFor = h => el('span', { class: 'tag ' + ({ rising: 'bad', flat: 'ok', unclear: 'warn', insufficient: 'muted' })[h.assessment] }, t(h.assessment));
+  fillRows($('leakRows'), hosts.map(h => [
+    el('span', {}, el('span', { class: 'dot', style: 'background:' + hostColor(h.host) + ';margin-right:6px' }), h.host), tagFor(h),
+    N(h.baseline ? fmtSigned(h.baseline.slope_mib_per_day, 1) : '—'), N(h.baseline ? fmtNum(h.baseline.r2, 2) : '—'),
+    N(h.post_gc ? fmtSigned(h.post_gc.slope_mib_per_day, 1) : '—'), N(fmtDur(h.time_to_limit_hours)),
+    N(h.coverage_pct === null ? '—' : fmtNum(h.coverage_pct, 1) + '%'), N(String(h.gaps.length)), N(String(h.restarts.length + h.counter_resets)),
+    N(h.old_pct_max === null ? '—' : fmtNum(h.old_pct_max, 1))
+  ]), 10);
+  // Hosts that are not flat come first: a flat host's largest hourly rise is usually noise.
+  const suspect = hosts.filter(h => h.assessment === 'rising' || h.assessment === 'unclear');
+  const rises = (suspect.length ? suspect : hosts).flatMap(h => h.top_rises).sort((x, y) => y.rise_mib - x.rise_mib).slice(0, 8);
+  fillRows($('riseRows'), rises.map(r => [r.host, fmtTime(r.hour_start, ST.timeZone, true), N(fmtSigned(r.rise_mib, 1)), N(fmtNum(r.floor_mib, 0)),
+    a.events.filter(e => e.host === r.host && Math.abs(e.t - r.hour_start - HOUR / 2) <= 1.5 * HOUR).map(e => e.event_name.replace('JAVA_GC_', '')).join(', ') || '—']), 5);
+
+  // Charts
+  const legend = allHosts.filter(x => !ST.hidden.has(x));
+  for (const lg of document.querySelectorAll('[data-legend]')) { lg.textContent = ''; for (const hst of legend) lg.append(el('span', {}, el('i', { style: 'background:' + hostColor(hst) }), hst)); }
+  if (range) {
+    const sh = byHost(a.samples), gh = byHost(a.gcs);
+    const iv = new Map(hosts.map(h => [h.host, h.interval_sec]));
+    const ser = fn => legend.filter(x => sh.has(x)).map(x => ({ name: x, color: hostColor(x), breakMs: iv.get(x) ? Math.max(2.5 * iv.get(x) * 1000, iv.get(x) * 1000 + 30000) : 0, points: sh.get(x).map(s => ({ t: s.t, y: fn(s) })).filter(p => Number.isFinite(p.y)) }));
+    const gapList = hosts.flatMap(h => h.gaps);
+    const evColor = n => /HIGH|FAILED/.test(n) ? css('--bad') : /RECOVERED/.test(n) ? css('--ok') : css('--faint');
+    const markers = a.events.filter(e => e.event_name !== 'JAVA_GC_SAMPLE_MISSED').map(e => ({ t: e.t, color: evColor(e.event_name), dash: /STARTED|STOPPED|RESET/.test(e.event_name) }));
+    drawChart('cOld', { range, series: ser(s => s.old_pct), gaps: gapList, markers, minY: 0, maxY: 100, threshold: 85, unit: '%' });
+    drawChart('cHeap', { range, series: ser(s => s.heap_used_mib / 1024), dots: legend.filter(x => gh.has(x)).map(x => ({ name: x + ' (GC log)', color: hostColor(x), points: gh.get(x).filter(g => Number.isFinite(g.after_mib)).map(g => ({ t: g.t, y: g.after_mib / 1024 })) })), gaps: gapList, unit: ' GiB' });
+    drawChart('cGct', { range, series: ser(s => s.gct_delta_ms), gaps: gapList, unit: ' ms' });
+    const hourly = x => { const m = new Map(); for (const s of sh.get(x)) { if (!Number.isFinite(s.fgc_delta)) continue; const hh = Math.floor(s.t / HOUR) * HOUR; m.set(hh, (m.get(hh) || 0) + s.fgc_delta); } return [...m].map(([tt, y]) => ({ t: tt, y })).sort((p, q) => p.t - q.t); };
+    drawChart('cFgc', { range, series: [], bars: legend.filter(x => sh.has(x)).map(x => ({ name: x, color: hostColor(x), points: hourly(x) })), gaps: gapList, unit: '' });
+  } else for (const id of ['cOld', 'cHeap', 'cGct', 'cFgc']) drawChart(id, { range: { from: 0, to: 1 }, series: [] });
+
+  // Heatmap
+  const days = range ? Math.max(1, Math.round((range.to - range.from) / DAY)) : 0;
+  $('heatSub').textContent = t('heatSub', { tz: ST.timeZone, days });
+  drawHeat(heatmap(a.samples, ST.timeZone, ST.heatMetric, ST.heatHost), ST.heatMetric);
+
+  // Tables
+  fillRows($('dailyRows'), daily(a.samples, a.events, ST.timeZone, hosts).map(r => [r.date, r.host, N(r.samples.toLocaleString()), N(r.coverage_pct === null ? '—' : fmtNum(r.coverage_pct, 1) + '%'), N(fmtNum(r.min_old_used_mib, 0)), N(fmtNum(r.max_old_pct, 1)), N(String(r.full_gc)), N(fmtNum(r.gc_sec, 1)), N(String(r.events))]), 9);
+  const evs = [...a.events].sort((x, y) => y.t - x.t).slice(0, 300);
+  fillRows($('eventRows'), evs.map(e => [fmtTime(e.t, ST.timeZone), e.host, el('span', { class: 'tag ' + (/HIGH|FAILED/.test(e.event_name) ? 'bad' : /RECOVERED/.test(e.event_name) ? 'ok' : 'muted') }, e.event_name.replace('JAVA_GC_', '')), N(e.old_pct === null ? '—' : fmtNum(e.old_pct, 1)), e.detail]), 5);
+  fillRows($('gapRows'), hosts.flatMap(h => h.gaps).sort((x, y) => y.start - x.start).map(g => [g.host, fmtTime(g.start, ST.timeZone), fmtTime(g.end, ST.timeZone), N(String(g.minutes))]), 4);
+}
+
+function renderTzOptions() {
+  const sel = $('tz'), local = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+  const opts = [['UTC', 'UTC'], ['Asia/Tokyo', 'Asia/Tokyo']];
+  if (!opts.some(o => o[0] === local)) opts.push([local, t('localTz', { tz: local })]);
+  sel.textContent = ''; for (const [v, l] of opts) sel.append(el('option', { value: v }, l)); sel.value = ST.timeZone;
+}
+function renderHeatOptions() {
+  const m = $('heatMetric'); m.textContent = '';
+  for (const [v, l] of [['maxOld', t('hmMaxOld')], ['avgOld', t('hmAvgOld')], ['gc', t('hmGc')], ['full', t('hmFull')]]) m.append(el('option', { value: v }, l));
+  m.value = ST.heatMetric;
+  const hsel = $('heatHost'); hsel.textContent = ''; hsel.append(el('option', { value: '*' }, t('allHosts')));
+  for (const hst of [...new Set(ST.samples.map(s => s.host))].sort()) hsel.append(el('option', { value: hst }, hst));
+  if (![...hsel.options].some(o => o.value === ST.heatHost)) ST.heatHost = '*';
+  hsel.value = ST.heatHost;
+}
+
+function dedup() {
+  const m = new Map(); for (const s of ST.samples) m.set(s.host + '@' + s.t, s); ST.samples = [...m.values()].sort((a, b) => a.t - b.t);
+  const g = new Map(); for (const x of ST.gcs) g.set(x.host + '@' + x.t + '#' + x.id + x.kind, x); ST.gcs = [...g.values()].sort((a, b) => a.t - b.t);
+  const e = new Map(); for (const x of ST.events) e.set(x.host + '@' + x.t + x.event_name, x); ST.events = [...e.values()].sort((a, b) => a.t - b.t);
+}
+
+async function ingest(files) {
+  if (ST.demo) { ST.samples = []; ST.gcs = []; ST.events = []; ST.files = []; ST.demo = false; }
+  let records = 0, skipped = 0;
+  for (const file of files) {
+    const text = await file.text(), low = file.name.toLowerCase();
+    let info;
+    if (low.endsWith('.csv')) { const s = parseSamples(text, file.name); ST.samples.push(...s); info = { kind: 'jstat_csv', records: s.length, skipped_lines: 0 }; }
+    else if (/\.(jsonl?|ndjson)$/.test(low)) { const z = parseJsonl(text, file.name); ST.samples.push(...z.samples); ST.events.push(...z.events); info = { kind: 'collector_ndjson', records: z.samples.length + z.events.length, skipped_lines: z.skipped }; }
+    else { const host = hostFromFile(file.name), z = parseGcLog(text, host, file.name); ST.gcs.push(...z.gcs); info = { kind: 'unified_gc_log', host, records: z.gcs.length, skipped_lines: z.skipped }; }
+    ST.files.push({ name: file.name, size_bytes: file.size, ...info });
+    records += info.records; skipped += info.skipped_lines;
+  }
+  dedup(); render();
+  $('status').textContent = t('loaded', { files: ST.files.length, records: records.toLocaleString() }) + (skipped ? t('skipped', { n: skipped }) : '');
+}
+
+function download(name, text, type) {
+  const u = URL.createObjectURL(new Blob([text], { type })); const a = el('a', { href: u, download: name });
+  document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(u), 1000);
+}
+function stamp(r) { return r ? isoUtc(r.from).slice(0, 13).replace(/[-:T]/g, '') + '-' + isoUtc(r.to).slice(0, 13).replace(/[-:T]/g, '') : 'empty'; }
+
+function init() {
+  let prefs = {};
+  try { prefs = JSON.parse(localStorage.getItem('jgc-prefs') || '{}') || {}; } catch (e) { /* storage unavailable */ }
+  ST.lang = prefs.lang || ((navigator.language || '').toLowerCase().startsWith('ja') ? 'ja' : 'en');
+  ST.timeZone = prefs.timeZone || ST.timeZone;
+  ST.range = prefs.range || ST.range;
+  if (prefs.theme) document.documentElement.dataset.theme = prefs.theme;
+  const save = () => { try { localStorage.setItem('jgc-prefs', JSON.stringify({ lang: ST.lang, timeZone: ST.timeZone, range: ST.range, theme: document.documentElement.dataset.theme || '' })); } catch (e) { /* ignore */ } };
+  const drop = $('drop');
+  drop.ondragover = e => { e.preventDefault(); drop.classList.add('drag'); };
+  drop.ondragleave = () => drop.classList.remove('drag');
+  drop.ondrop = e => { e.preventDefault(); drop.classList.remove('drag'); ingest([...e.dataTransfer.files]); };
+  $('files').onchange = e => { ingest([...e.target.files]); e.target.value = ''; };
+  $('demo').onclick = () => { const d = makeDemo(); Object.assign(ST, { samples: d.samples, gcs: d.gcs, events: d.events, files: [], demo: true, hidden: new Set() }); dedup(); render(); $('status').textContent = t('demoStatus'); };
+  $('clear').onclick = () => { Object.assign(ST, { samples: [], gcs: [], events: [], files: [], demo: false, hidden: new Set() }); render(); };
+  $('lang').onclick = () => { ST.lang = ST.lang === 'ja' ? 'en' : 'ja'; save(); render(); if (ST.demo) $('status').textContent = t('demoStatus'); };
+  $('theme').onclick = () => { const d = document.documentElement, cur = d.dataset.theme || 'auto', next = cur === 'auto' ? 'light' : cur === 'light' ? 'dark' : 'auto'; if (next === 'auto') delete d.dataset.theme; else d.dataset.theme = next; save(); render(); };
+  $('tz').onchange = e => { ST.timeZone = e.target.value; save(); render(); };
+  for (const b of document.querySelectorAll('#range button')) b.onclick = () => { ST.range = b.dataset.range; save(); render(); };
+  $('heatMetric').onchange = e => { ST.heatMetric = e.target.value; render(); };
+  $('heatHost').onchange = e => { ST.heatHost = e.target.value; render(); };
+  $('exRaw').onclick = () => { const r = currentRange(); download(`java_gc_raw_${stamp(r)}.json`, JSON.stringify(buildRawExport(r), null, 1), 'application/json'); };
+  $('exAna').onclick = () => { const r = currentRange(); if (!r) return; download(`java_gc_analysis_${stamp(r)}.json`, JSON.stringify(buildAnalysisExport(r), null, 1), 'application/json'); };
+  $('exCsv').onclick = () => {
+    const r = currentRange(); if (!r) return;
+    const cols = ['timestamp_utc', 'host', 'pid', 'old_pct', 'old_used_mib', 'old_capacity_mib', 'heap_used_mib', 'heap_capacity_mib', 'gct_delta_ms', 'fgc_delta'];
+    const rows = [cols.join(',')].concat(inRange(ST.samples, r).map(s => cols.map(c => c === 'timestamp_utc' ? isoUtc(s.t) : s[c] ?? '').join(',')));
+    download(`java_gc_samples_${stamp(r)}.csv`, rows.join('\n') + '\n', 'text/csv;charset=utf-8');
+  };
+  for (const id of ['cOld', 'cHeap', 'cGct', 'cFgc']) attachTip(id);
+  let rt = null; window.addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(render, 120); });
+  if (window.matchMedia) window.matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', render);
+  render();
+  if (location.hash === '#demo') $('demo').click();
+}
+
+if (typeof document !== 'undefined' && !globalThis.__GC_TIMELINE_NO_INIT__) init();
+</script>
+</body>
+</html>

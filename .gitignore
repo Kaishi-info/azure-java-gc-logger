@@ -1,0 +1,14 @@
+# Collector output and run results: real logs must never be committed.
+out/
+leaky-out/
+gc_samples_*.csv
+gc_azure_*.json
+collector_*.log
+diag_*/
+diag_*.tar.gz
+gc_logger.conf
+*.hprof
+# Local tooling
+.DS_Store
+node_modules/
+.wrangler/
