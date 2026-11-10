@@ -5,6 +5,19 @@ collector の出力（CSV・NDJSON）と、あれば Unified GC ログをまと�
 Content-Security-Policy で外部への通信をすべて禁止しており、ファイルはどこにも送信されません。
 
 `index.html#demo` を開くと、7 日分の合成デモ（リークするホストと正常なホスト）を表示します。
+公開デモ: https://kaishi-info.github.io/azure-java-gc-logger/#demo （GitHub Pages で `dashboard/index.html` だけを配信）
+
+URL の `#` 以降で表示を指定できます（保存はされません）。
+
+| 指定 | 値 |
+| --- | --- |
+| `demo` | 合成デモを表示 |
+| `lang` | `ja` / `en` |
+| `theme` | `light` / `dark` |
+| `tz` | `UTC` / `Asia/Tokyo` |
+| `range` | `24h` / `7d` / `all` |
+
+例: `index.html#demo&lang=en&theme=dark&range=24h`
 
 ## 画面構成
 

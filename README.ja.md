@@ -7,6 +7,23 @@ Java アプリの GC（ガベージコレクション）の状態を、**JDK 付
 > **公開区分: v0.2.0 参考実装。** 自動テスト（collector・ダッシュボード・Docker 上の実 JVM）は通っており、PostgreSQL を使う 100 セッションの
 > 負荷シナリオも別の非公開リポジトリで実施済みですが、実際の Azure 環境への取り込みと、本番サーバーでの長期稼働は未検証です。
 
+## デモ
+
+**ブラウザで試す: https://kaishi-info.github.io/azure-java-gc-logger/#demo**
+（7 日分の合成データ。実測値ではありません。自分のファイルを読み込んでも、ブラウザの外には送信されません）
+
+手元では `dashboard/index.html#demo` を開くだけで同じ画面が出ます。
+
+![ダッシュボードの合成デモ: 指標カード、リーク追跡（APP01 が増加傾向、APP02 が横ばい）、Old 世代使用率とヒープ使用量のグラフ](docs/images/dashboard-demo-ja.png)
+
+APP01 は業務時間帯にベースラインが増え続け、4 日目に JVM が再起動したホスト、APP02 は 3 時間の欠測があるものの横ばいのホストです。
+リーク追跡の表は、再起動後の区間だけで傾きを計算しています。
+
+![曜日 × 時刻（7×24）のヒートマップ: 最大 Old 使用率が週の後半ほど高い](docs/images/dashboard-heatmap-ja.png)
+
+URL の `#` 以降で表示を指定できます（例: `#demo&lang=en&theme=dark&tz=UTC&range=24h`）。
+画像は `sh scripts/screenshots.sh` で撮り直せます。
+
 ## Claude Code を使う場合（いちばん簡単）
 
 Claude Code に**このリポジトリの URL を貼って「これで Java の GC を監視したい」と伝えるだけ**で始められます。

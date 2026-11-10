@@ -9,7 +9,7 @@ status=0
 step() { printf '\n== %s\n' "$1"; shift; if "$@"; then echo "-- ok"; else echo "-- FAILED: $*"; status=1; fi; }
 
 if command -v shellcheck >/dev/null 2>&1; then
-  step 'shellcheck' shellcheck -s sh collector/collect_gc.sh tests/*.sh examples/leaky-jdbc/run-docker.sh
+  step 'shellcheck' shellcheck -s sh collector/collect_gc.sh tests/*.sh examples/leaky-jdbc/run-docker.sh scripts/screenshots.sh
 else
   echo '== shellcheck not installed: skipped (CI runs it)'
 fi

@@ -21,7 +21,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: shellcheck (POSIX sh)
-        run: shellcheck -s sh collector/collect_gc.sh tests/*.sh examples/leaky-jdbc/run-docker.sh
+        run: shellcheck -s sh collector/collect_gc.sh tests/*.sh examples/leaky-jdbc/run-docker.sh scripts/screenshots.sh
       - name: public content check (secrets, IDs, institution wording, remote resources, real logs)
         run: sh tests/check_public_content.sh
 

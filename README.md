@@ -12,6 +12,14 @@ Java applications can exhaust heap while apparently running normally, and period
 
 It does **not** identify GC roots, detect every kind of leak, replace a heap profiler, or prove that an application is free of leaks. Connection leaks, for example, may never show up in the heap (see the load test findings below).
 
+## Demo
+
+**Try it in your browser: https://kaishi-info.github.io/azure-java-gc-logger/#demo&lang=en** (7 days of synthetic data; files you load never leave your browser). Locally, open `dashboard/index.html#demo`.
+
+![Synthetic demo: KPI cards, leak tracking (APP01 rising, APP02 flat), Old-generation occupancy and heap charts](docs/images/dashboard-demo-en.png)
+
+View options go in the URL fragment, e.g. `#demo&lang=ja&theme=dark&tz=UTC&range=24h`. Screenshots are regenerated with `sh scripts/screenshots.sh`.
+
 ## Using Claude Code
 
 Paste this repository's URL into [Claude Code](https://claude.com/claude-code) and say what you want to monitor. [`CLAUDE.md`](CLAUDE.md) walks the agent through local verification, a single round of questions, VM install commands, interactive setup, 24×7 operation, reading diagnostics when collection fails, building a report from the dashboard's analysis JSON, and (optionally) Azure Monitor configuration. Commands against production VMs and Azure are **shown for the administrator to run**, never executed autonomously.

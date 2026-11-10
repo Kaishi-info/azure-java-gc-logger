@@ -848,6 +848,12 @@ function init() {
   ST.timeZone = prefs.timeZone || ST.timeZone;
   ST.range = prefs.range || ST.range;
   if (prefs.theme) document.documentElement.dataset.theme = prefs.theme;
+  // Shareable view settings in the URL fragment, e.g. index.html#demo&lang=en&theme=light&tz=UTC&range=24h
+  const hp = new URLSearchParams(location.hash.slice(1));
+  if (hp.get('lang') === 'ja' || hp.get('lang') === 'en') ST.lang = hp.get('lang');
+  if (['light', 'dark'].includes(hp.get('theme'))) document.documentElement.dataset.theme = hp.get('theme');
+  if (['UTC', 'Asia/Tokyo'].includes(hp.get('tz'))) ST.timeZone = hp.get('tz');
+  if (['24h', '7d', 'all'].includes(hp.get('range'))) ST.range = hp.get('range');
   const save = () => { try { localStorage.setItem('jgc-prefs', JSON.stringify({ lang: ST.lang, timeZone: ST.timeZone, range: ST.range, theme: document.documentElement.dataset.theme || '' })); } catch (e) { /* ignore */ } };
   const drop = $('drop');
   drop.ondragover = e => { e.preventDefault(); drop.classList.add('drag'); };
@@ -874,7 +880,7 @@ function init() {
   let rt = null; window.addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(render, 120); });
   if (window.matchMedia) window.matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', render);
   render();
-  if (location.hash === '#demo') $('demo').click();
+  if (hp.has('demo')) $('demo').click();
 }
 
 if (typeof document !== 'undefined' && !globalThis.__GC_TIMELINE_NO_INIT__) init();
