@@ -4,13 +4,13 @@
 
 [日本語の README](README.ja.md)
 
-> **Release status:** v0.2.0, reference implementation. Collector unit tests, dashboard tests, real-JVM tests in Docker and a PostgreSQL-backed LMS-style load scenario pass. Azure Monitor ingestion and unattended production operation **have not** been validated. Review [`AGENTS.md`](AGENTS.md) before deploying.
+> **Release status:** v0.2.0, reference implementation. Collector unit tests, dashboard tests and real-JVM tests in Docker pass; a PostgreSQL-backed 100-session load scenario was run in a separate private repository. Azure Monitor ingestion and unattended production operation **have not** been validated. Review [`AGENTS.md`](AGENTS.md) before deploying.
 
 ## Why this exists
 
 Java applications can exhaust heap while apparently running normally, and periodic restarts can hide a growing baseline. This project collects inexpensive time-series evidence with the **JDK's own `jstat`**, shows a week of it in **one offline HTML file**, and can forward **typed events** to Azure Monitor. It never forces GC, restarts the JVM or writes to the application.
 
-It does **not** identify GC roots, detect every kind of leak, replace a heap profiler, or prove that an application is free of leaks. Connection leaks, for example, may never show up in the heap (see the LMS scenario below).
+It does **not** identify GC roots, detect every kind of leak, replace a heap profiler, or prove that an application is free of leaks. Connection leaks, for example, may never show up in the heap (see the load test findings below).
 
 ## Using Claude Code
 
@@ -25,8 +25,7 @@ Paste this repository's URL into [Claude Code](https://claude.com/claude-code) a
 | [`dashboard/index.html`](dashboard/index.html) | Offline multi-host 7×24 dashboard; CSV, NDJSON and Unified GC logs; raw/analysis JSON export | No: local browser only |
 | [`azure/`](azure/) | AMA custom JSON log setup, KQL queries and alert examples | Azure control plane, manually configured |
 | [`examples/leaky-jdbc/`](examples/leaky-jdbc/) | Synthetic JVM that leaks JDBC-style connections vs a fixed twin | No: disposable container |
-| [`examples/lms-load/`](examples/lms-load/) | PostgreSQL + synthetic LMS (to-do, calendar, enrolment, gradebook) + Artillery, 100 concurrent sessions | No: disposable containers |
-| [`tests/`](tests/) | Unit, real-JVM, LMS scenario and public-content checks | CI or development machine |
+| [`tests/`](tests/) | Unit, real-JVM and public-content checks | CI or development machine |
 
 No Python, Node.js, Java agent, Maven plugin or extra JAR is required **on the monitored VM**.
 
@@ -78,23 +77,22 @@ Open `dashboard/index.html` in a modern browser and load any mix of CSV, NDJSON 
 - **Old occupancy** = `OU / OC`: a snapshot, not live data after Full GC. Old capacity can change at runtime (G1), so the percentage can move without a change in used memory.
 - **GC time delta** = difference in cumulative `GCT`: not guaranteed to be stop-the-world only.
 - **Rising baseline** is consistent with a leak *or* a growing working set (caches, sessions). It is not proof.
-- **Old occupancy above 85%** is a demonstration threshold. In the LMS scenario a healthy 256 MB JVM reached 90%.
+- **Old occupancy above 85%** is a demonstration threshold. In a 100-session load test a healthy 256 MB JVM reached 90%.
 
 ## Test scenarios
 
 ```sh
 sh tests/run_all.sh                    # shellcheck, public-content check, collector (sh/dash/bash), dashboard
 sh tests/run_all.sh --docker           # + real JVM in Docker: leaking vs fixed, uid without passwd entry, diagnostics
-sh tests/run_all.sh --docker --lms     # + LMS 100-session scenarios (~15 min)
 ```
 
-The LMS scenario (`examples/lms-load`) runs PostgreSQL 16, a synthetic Java 11 LMS and Artillery with 100 concurrent sessions, with three switchable defects: `none`, `connection` (a pooled connection is not returned on a validation error: the service stalls with 503s while **heap and GC look healthy**), and `session` (responses accumulate per session: Old generation grows until the JVM stalls). Details and measured results: [`docs/ja/testing.md`](docs/ja/testing.md).
+A 100-session load scenario (PostgreSQL 16, a synthetic Java 11 learning-management-style app, Artillery) lives in a separate private repository. What it showed: without any defect Old occupancy still reached 90%; a **connection-pool leak stalled the service with 503s while heap and GC looked healthy**; a per-session cache leak drove Old to 99.95% and the JVM hung with **frozen counters**, which `azure/alert_stalled_jvm.kql` detects. Details (Japanese): [`docs/ja/testing.md`](docs/ja/testing.md).
 
-Load or attack-style scenarios beyond a self-hosted synthetic stack (DoS-like traffic, credential stuffing, exploit payloads) do not belong in this public repository; keep them in a separate private repository with documented targets and approvals.
+Database-backed load tests and attack-style scenarios (DoS-like traffic, credential stuffing, exploit payloads) do not belong in this public repository; they are kept in a private repository with documented targets and approvals.
 
 ## CI/CD
 
-GitHub Actions (free for public repositories): [`ci.yml`](.github/workflows/ci.yml) on every push and pull request (lint, public-content check, Linux/macOS unit tests, real-JVM job), [`lms-scenario.yml`](.github/workflows/lms-scenario.yml) weekly or on demand, and [`release.yml`](.github/workflows/release.yml) on `v*` tags (all checks, then a source archive and a VM collector bundle with SHA-256 sums as a GitHub Release). Deployment to VMs and any Azure change remain manual, approved operations.
+GitHub Actions (free for public repositories): [`ci.yml`](.github/workflows/ci.yml) on every push and pull request (lint, public-content check, Linux/macOS unit tests, real-JVM job) and [`release.yml`](.github/workflows/release.yml) on `v*` tags (all checks, then a source archive and a VM collector bundle with SHA-256 sums as a GitHub Release). Deployment to VMs and any Azure change remain manual, approved operations.
 
 ## Optional Azure Monitor integration
 
@@ -120,6 +118,14 @@ GitHub Actions (free for public repositories): [`ci.yml`](.github/workflows/ci.y
 - [Microsoft Learn: Create a custom table in Azure Monitor Logs](https://learn.microsoft.com/en-us/azure/azure-monitor/logs/create-custom-table)
 - [Microsoft Learn: Create a log search alert](https://learn.microsoft.com/en-us/azure/azure-monitor/alerts/alerts-create-log-alert-rule)
 
+## Verification
+
+Verified by Akihiko SHIRAI (AICU Inc. / 開志創造大学) together with Claude Code (Opus 5.5). What has and has not been validated is listed under *Release status* above and in [`docs/ja/testing.md`](docs/ja/testing.md).
+
+## Third-party open source
+
+Nothing is bundled. On monitored VMs the collector uses only the JDK's `jstat` / `jcmd` (GPL-2.0 with Classpath Exception) and standard POSIX tools; the dashboard uses no libraries at all. Development and CI use Eclipse Temurin images, Docker Engine, Node.js, ShellCheck and GitHub Actions. Full list with licenses: [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).
+
 ## License
 
-MIT © 2026 AICU Inc. See [`LICENSE`](LICENSE).
+MIT © 2026 AICU Inc. / Akihiko SHIRAI (開志創造大学). See [`LICENSE`](LICENSE).

@@ -36,7 +36,7 @@ What to expect (one run, 50 req/s, 20% failure path, 128 KiB buffer):
 | `LEAK` | rises steadily from about 9% to 98% | starts only in the last ~10 s; GC log shows `126M->104M` after Full GC | `OutOfMemoryError` after about 100 s, then `JAVA_GC_OLD_HIGH` and `JAVA_GC_COLLECTOR_FAILED` events |
 | `FIXED` | flat around 4-5% | none | completes normally; collector stops with `JAVA_GC_COLLECTOR_FAILED` once the JVM exits |
 
-The same run is asserted in CI by [`tests/test_real_jvm.sh`](../../tests/test_real_jvm.sh). For a database-backed, multi-session version see [`../lms-load`](../lms-load/).
+The same run is asserted in CI by [`tests/test_real_jvm.sh`](../../tests/test_real_jvm.sh).
 
 The heap that remains after a Full GC is the signal that separates a leak from a heap that is merely busy. `jstat` sampling alone does not show it, which is why the dashboard also accepts Unified GC logs.
 

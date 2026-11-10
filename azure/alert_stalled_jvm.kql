@@ -1,0 +1,19 @@
+// Stalled (hung) JVM: the collector still delivers metrics, but every counter is frozen.
+// A JVM stuck after back-to-back Full GCs keeps answering jstat with the same values:
+// heap and Old usage do not move and no GC time accumulates.
+// An idle JVM can also look frozen, so this requires high Old occupancy as well.
+// Scope: dedicated Log Analytics workspace. Configure: measure = table rows,
+// condition > 0, evaluation every 5 minutes, dimension = host. Tune the window
+// (10 minutes) and the 90% cut-off to your collection interval and baseline.
+JavaGc_CL
+| where TimeGenerated > ago(10m)
+| where record_type == "metric"
+| summarize Samples = count(),
+            DistinctHeapUsed = dcount(heap_used_mib),
+            DistinctOldUsed = dcount(old_used_mib),
+            GcMsInWindow = sum(gct_delta_ms),
+            MaxOldPct = max(old_pct),
+            LastMetric = max(TimeGenerated)
+            by host, pid
+| where Samples >= 5 and DistinctHeapUsed == 1 and DistinctOldUsed == 1 and GcMsInWindow == 0 and MaxOldPct >= 90
+| project host, pid, Samples, MaxOldPct, LastMetric

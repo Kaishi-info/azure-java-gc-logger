@@ -14,6 +14,7 @@ This directory contains **configuration examples**. It makes no Azure API calls 
 6. Configure a **separate log search alert rule** using `alert_pressure.kql`, scoped to the destination workspace. Alert on `AlertEvents > 0` and split by `host`. Use a lookback long enough for ingestion latency, but tune notification suppression to avoid repeated alerts for the same single event.
 7. Optionally use `alert_current_pressure.kql` to assess recent *observed* high utilization even if the collector restarted before posting a transition event. This is not leak proof.
 8. For 24×7 operation, add `alert_missing_metrics.kql` as a heartbeat: it fires when a host that reported in the last day has been silent for 15 minutes (collector stopped, AMA cannot read the file, DCR broken).
+9. Add `alert_stalled_jvm.kql` to catch a **hung JVM**: metrics keep arriving but heap, Old usage and GC time are frozen while Old occupancy is high. This happens after back-to-back Full GCs, when the JVM no longer serves requests but `jstat` still answers. The collector deliberately does not judge this on the VM; the alert lives in Azure where it can be tuned and suppressed.
 
 ### Events in `JavaGc_CL`
 

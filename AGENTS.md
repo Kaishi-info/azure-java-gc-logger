@@ -27,14 +27,14 @@ This repository contains a reference collector (POSIX shell + JDK `jstat`), a st
 - JVM command-line arguments must never be displayed, stored or bundled (they can contain secrets); only PID and main class.
 - `dashboard/index.html` loads local CSV / NDJSON / selected Unified GC logs and exports `java-gc-timeline/raw@1` and `java-gc-timeline/analysis@1` JSON. It must not connect to anything; its CSP enforces `connect-src 'none'`.
 - `azure/*.kql` targets the example `JavaGc_CL` table. Azure environment changes are manually approved operations, not part of tests.
-- `examples/` are synthetic workloads for disposable containers only. Attack-style scenarios (DoS-like load, credential stuffing, exploit payloads) do not belong in this repository.
+- `examples/` are synthetic single-JVM workloads for disposable containers only. Database-backed load tests and attack-style scenarios (DoS-like load, credential stuffing, exploit payloads) live in a separate private repository, not here.
+- Hung-JVM detection (frozen counters) is done in Azure (`azure/alert_stalled_jvm.kql`), not on the VM.
 
 ## CI checks
 
 ```sh
 sh tests/run_all.sh                  # shellcheck, public-content check, collector tests (sh/dash/bash), dashboard tests
 sh tests/run_all.sh --docker         # + real JVM scenarios in Docker
-sh tests/run_all.sh --docker --lms   # + LMS 100-session scenarios
 ```
 
 GitHub Actions runs the same scripts (`.github/workflows/`). On every pull request, inspect new files for leaked secrets, real host IDs, private incident detail, and unwanted remote connections; `tests/check_public_content.sh` automates part of this. Demonstration logs must be synthetic. Never assert that Azure ingestion has been validated unless a test environment has explicitly demonstrated it.

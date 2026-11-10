@@ -12,8 +12,7 @@ been deployed to production or independently validated against live Azure Monito
 2. Confirm the repository will be public and that no live customer telemetry,
    heap dump, Azure subscription ID, credentials, or private configuration is
    included in its first commit or history.
-3. Run `sh tests/run_all.sh --docker` on a development workstation (add
-   `--lms` for the LMS scenarios). Use a disposable, synthetic environment for
+3. Run `sh tests/run_all.sh --docker` on a development workstation. Use a disposable, synthetic environment for
    any Azure ingestion tests.
 4. Ensure an appropriate security contact and an owner for future maintenance.
 5. Keep the first release marked **reference implementation / not validated
@@ -39,7 +38,7 @@ its established branch and review policy.
 ## First post-publication checks
 
 - Confirm the `ci` workflow passes (lint, public-content check, unit tests on
-  Linux and macOS, real-JVM job). Run `lms-scenario` once by hand.
+  Linux and macOS, real-JVM job).
 - Releases: push a `vX.Y.Z` tag that matches `collect_gc.sh --version`; the
   `release` workflow publishes archives with SHA-256 sums.
 - Open `dashboard/index.html#demo` on a workstation.

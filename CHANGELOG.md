@@ -20,10 +20,12 @@
 
 ### Scenarios, tests, CI/CD
 - `examples/leaky-jdbc`: synthetic JVM leaking JDBC-style connections vs a fixed twin, run in Docker.
-- `examples/lms-load`: PostgreSQL + synthetic Java LMS + Artillery with 100 concurrent sessions and switchable `connection` / `session` defects.
-- Tests: 57 collector checks (normal and failure paths), 19 dashboard checks, real-JVM checks in Docker, LMS scenario assertions, public-content check.
-- GitHub Actions: `ci.yml`, `lms-scenario.yml` (weekly/manual), `release.yml` (tagged releases with SHA-256 sums).
-- Japanese documentation: operations, dashboard, testing; `CLAUDE.md` runbook for Claude Code; Azure heartbeat query `alert_missing_metrics.kql`.
+- A PostgreSQL-backed 100-session load scenario was run in a separate private repository; its findings (connection leaks invisible to GC metrics, frozen counters of a hung JVM, PID reuse in containers) are documented in `docs/ja/testing.md`.
+- Azure: `alert_missing_metrics.kql` (heartbeat) and `alert_stalled_jvm.kql` (hung JVM with frozen counters).
+- Tests: 57 collector checks (normal and failure paths), 19 dashboard checks, real-JVM checks in Docker, public-content check.
+- GitHub Actions: `ci.yml`, `release.yml` (tagged releases with SHA-256 sums).
+- Japanese documentation: operations, dashboard, testing; `CLAUDE.md` runbook for Claude Code; `THIRD_PARTY_NOTICES.md`.
+- Copyright: AICU Inc. / Akihiko SHIRAI (開志創造大学), MIT.
 
 ### Limitations
 - Real production operation and Azure ingestion are still not validated.

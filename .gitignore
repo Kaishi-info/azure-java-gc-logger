@@ -1,7 +1,6 @@
 # Collector output and run results: real logs must never be committed.
 out/
 leaky-out/
-lms-out-*/
 gc_samples_*.csv
 gc_azure_*.json
 collector_*.log

@@ -4,8 +4,8 @@ Java アプリの GC（ガベージコレクション）の状態を、**JDK 付
 **1 ファイルのオフライン HTML** で 7 日分を可視化するツールです。必要なら Azure Monitor にイベントを送れます。
 監視する VM に Python・Node.js・エージェントは入れません。JVM には一切書き込みません。
 
-> **公開区分: v0.2.0 参考実装。** 自動テスト（collector・ダッシュボード・Docker 上の実 JVM・PostgreSQL を使う LMS 風シナリオ）は
-> 通っていますが、実際の Azure 環境への取り込みと、本番サーバーでの長期稼働は未検証です。
+> **公開区分: v0.2.0 参考実装。** 自動テスト（collector・ダッシュボード・Docker 上の実 JVM）は通っており、PostgreSQL を使う 100 セッションの
+> 負荷シナリオも別の非公開リポジトリで実施済みですが、実際の Azure 環境への取り込みと、本番サーバーでの長期稼働は未検証です。
 
 ## Claude Code を使う場合（いちばん簡単）
 
@@ -63,7 +63,7 @@ sh collector/collect_gc.sh --collect-logs
 | --- | --- |
 | [docs/ja/operations.md](docs/ja/operations.md) | 運用手順（セットアップ、コマンド、systemd、失敗時の対応、出力とイベント、注意点） |
 | [docs/ja/dashboard.md](docs/ja/dashboard.md) | ダッシュボードの見方、判定のしかた、JSON の形式 |
-| [docs/ja/testing.md](docs/ja/testing.md) | テスト一覧、異常系シナリオ、テスト用 Docker（リーク JVM・LMS 100 セッション）、CI/CD |
+| [docs/ja/testing.md](docs/ja/testing.md) | テスト一覧、異常系シナリオ、テスト用 Docker（リーク JVM）、負荷シナリオで得た知見、CI/CD |
 | [azure/README.md](azure/README.md) | Azure Monitor 連携（AMA → DCR → `JavaGc_CL` → アラート）の設定例 |
 | [CLAUDE.md](CLAUDE.md) | Claude Code 向けの案内手順 |
 | [AGENTS.md](AGENTS.md) | AI エージェントと運用の安全条件 |
@@ -72,9 +72,28 @@ sh collector/collect_gc.sh --collect-logs
 
 - `jstat` の Old 使用率は採取時点の値で、Full GC 直後の生存量ではありません。使用率が高いことはリークの証明ではありません。
 - `GCT` の差分は GC に使った累積時間で、停止時間（STW）だけとは限りません。
-- **接続リークはヒープに現れないことがあります。** LMS 風シナリオでは、接続プールが枯渇してサービスが止まっても、
+- **接続リークはヒープに現れないことがあります。** 100 セッションの負荷シナリオでは、接続プールが枯渇してサービスが止まっても、
   Old 使用率は 60% 程度のままでした（[testing.md](docs/ja/testing.md)）。GC 監視はアプリのプール監視の代わりになりません。
 - 本番での実施前に、OS 権限、PID の変化、収集負荷、保存先、保持期限、担当者、Azure 取り込み費用を確認・承認してください。
   **実ログ、認証情報、ヒープダンプ、個人情報は公開リポジトリに登録しないでください。**
 
-MIT License © 2026 AICU Inc.
+## 検証体制
+
+AICU Inc. / 開志創造大学の白井暁彦が、Claude Code（Opus 5.5）とともに検証しています。
+検証済みの範囲と未検証の範囲は、冒頭の「公開区分」と [docs/ja/testing.md](docs/ja/testing.md) に書いています。
+
+## 利用している OSS
+
+このリポジトリは他のソフトウェアを同梱していません。
+
+| 使う場所 | 使うもの | ライセンス |
+| --- | --- | --- |
+| 監視対象の VM | JDK 付属の `jstat` / `jcmd`、POSIX シェル・`awk`・`tar`・`gzip`、（任意）systemd | GPL-2.0 with Classpath Exception、各 OS のライセンス |
+| ブラウザ | なし（ダッシュボードは外部ライブラリを使わず Canvas で描画） | — |
+| 開発・テスト・CI | Eclipse Temurin（Docker イメージ）、Docker Engine、Node.js、ShellCheck、GitHub Actions、GitHub CLI | GPL-2.0+CE、Apache-2.0、MIT、GPL-3.0、MIT、MIT |
+
+一覧と取得元: [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)
+
+## ライセンス
+
+MIT License © 2026 AICU Inc. / 白井暁彦（開志創造大学）

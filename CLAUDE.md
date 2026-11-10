@@ -59,6 +59,7 @@
 7. **Azure Monitor 連携（任意）**
    `azure/README.md` に沿って、カスタムテーブル `JavaGc_CL`、DCR（Custom JSON Logs）、アラートの設定内容を作り、
    管理者のレビューに回す。作成・変更は管理者が行う。費用が発生しうることを必ず書く。
+   24 時間運用では `alert_missing_metrics.kql`（メトリックが届かない）と `alert_stalled_jvm.kql`（JVM のハング＝値が凍る）も提案する。
 8. **GC ログを追加したいとき**（JVM 再起動が必要）
    例: `-Xlog:gc:file=/var/log/java-gc/APP01_gc.log:utctime,uptime,level,tags:filecount=7,filesize=50m`
    を示し、適用するかどうか・いつ再起動するかは管理者に委ねる。
@@ -68,5 +69,4 @@
 本番に触れる前に、手元の Docker で挙動を見せられる（合成データのみ）。
 
 - `sh examples/leaky-jdbc/run-docker.sh ./leaky-out 120` … リークする JVM と修正版の比較（2 分）
-- `sh examples/lms-load/run.sh --leak session --minutes 5` … PostgreSQL + LMS 風アプリに 100 セッション同時アクセス
 - 詳細: `docs/ja/testing.md`
