@@ -1,0 +1,35 @@
+# Example systemd unit for continuous (24x7) collection. Review before use.
+#
+# 1. Run the interactive setup once as the SAME user that runs the JVM:
+#      sudo -u appuser sh /opt/java-gc-logger/collect_gc.sh --setup
+#    (writes /opt/java-gc-logger/gc_logger.conf when run from that directory)
+# 2. Edit User=, WorkingDirectory= and paths below, then:
+#      sudo cp java-gc-logger.service /etc/systemd/system/
+#      sudo systemctl daemon-reload && sudo systemctl enable --now java-gc-logger
+# 3. Status:   systemctl status java-gc-logger ; journalctl -u java-gc-logger
+#
+# Restart=no is deliberate. If jstat fails three times (JVM restarted, PID
+# changed, permissions changed), the collector stops and prints instructions
+# for the operator: run `collect_gc.sh --collect-logs` and send the archive,
+# then rerun --setup for the new PID. Automatic restarts would hide that.
+
+[Unit]
+Description=Java GC sampling with jstat (read-only, azure-java-gc-logger)
+After=network.target
+
+[Service]
+Type=simple
+User=appuser
+WorkingDirectory=/opt/java-gc-logger
+Environment=CONFIG=/opt/java-gc-logger/gc_logger.conf
+Environment=SAMPLES=0
+ExecStart=/bin/sh /opt/java-gc-logger/collect_gc.sh
+Restart=no
+UMask=0077
+NoNewPrivileges=yes
+# Do NOT add PrivateTmp=yes: jstat finds the JVM through /tmp/hsperfdata_<user>.
+ProtectSystem=full
+Nice=10
+
+[Install]
+WantedBy=multi-user.target

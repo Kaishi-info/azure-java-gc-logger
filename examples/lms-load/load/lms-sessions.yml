@@ -1,0 +1,46 @@
+# Artillery scenario template: concurrent student sessions on the SYNTHETIC LMS.
+# run.sh replaces the double-underscore placeholders and writes the result to
+# OUT_DIR/lms-sessions.yml (with processor.js next to it).
+#
+# Each virtual user logs in once (one session cookie) and then repeats a
+# typical visit: to-do list, calendar, course list, gradebook, and one grade
+# submission. About 8% of submissions use an out-of-range score (101..109),
+# which is the path that leaks a pooled connection in LEAK_MODE=connection.
+# (Artillery's $randomNumber does not expand negative arguments.)
+config:
+  target: "http://app:8080"
+  processor: "./processor.js"   # stops every user at the deadline (see processor.js)
+  phases:
+    - name: "ramp up to __SESSIONS__ sessions"
+      duration: __RAMP_SEC__
+      arrivalCount: __SESSIONS__
+  http:
+    timeout: 10
+  ensure:
+    maxErrorRate: 100   # report, do not fail: errors are part of what we observe
+
+scenarios:
+  - name: "student visit"
+    flow:
+      - post:
+          url: "/login"
+          json:
+            user: "{{ $randomNumber(1, 2000) }}"
+      - loop:
+          - get:
+              url: "/todo"
+          - think: 1
+          - get:
+              url: "/calendar?days=14"
+          - get:
+              url: "/courses"
+          - think: 1
+          - get:
+              url: "/gradebook"
+          - post:
+              url: "/grades"
+              json:
+                assignment: "{{ $randomNumber(1, 800) }}"
+                score: "{{ $randomNumber(0, 109) }}"
+          - think: 2
+        whileTrue: "beforeDeadline"

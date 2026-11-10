@@ -1,0 +1,37 @@
+# LMS-style load scenario: PostgreSQL + synthetic Java LMS + Artillery
+# (100 concurrent sessions), observed by the collector. Manual or weekly,
+# because it takes about 15 minutes. Results are synthetic and uploaded as
+# an artifact for review in dashboard/index.html.
+name: lms-scenario
+
+on:
+  workflow_dispatch:
+    inputs:
+      minutes:
+        description: Load duration per mode (minutes)
+        default: "3"
+  schedule:
+    - cron: "17 3 * * 1"   # Mondays 03:17 UTC
+
+permissions:
+  contents: read
+
+jobs:
+  lms:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: none / connection / session
+        env:
+          REQUIRE_DOCKER: "1"
+          MINUTES: ${{ github.event.inputs.minutes || '3' }}
+          OUT_BASE: ${{ runner.temp }}/lms
+        run: sh tests/test_lms_scenario.sh
+      - name: upload synthetic results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lms-scenario-results
+          path: ${{ runner.temp }}/lms
+          retention-days: 14

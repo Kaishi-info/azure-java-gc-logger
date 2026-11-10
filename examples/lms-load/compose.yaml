@@ -1,0 +1,59 @@
+# SYNTHETIC LMS load scenario: PostgreSQL + Java LMS + Artillery (100 sessions).
+# Use examples/lms-load/run.sh rather than calling this directly.
+name: gc-lms-load
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: lms
+      POSTGRES_USER: lms
+      # Disposable, internal-only network: no password exists anywhere.
+      POSTGRES_HOST_AUTH_METHOD: trust
+    command: ["postgres", "-c", "max_connections=100", "-c", "shared_buffers=128MB"]
+    volumes:
+      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U lms -d lms"]
+      interval: 2s
+      timeout: 3s
+      retries: 60
+    networks: [lms]
+
+  app:
+    build: ./app
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      LEAK_MODE: ${LEAK_MODE:-none}
+      HOST_LABEL: ${HOST_LABEL:-LMS}
+      JAVA_OPTS: ${JAVA_OPTS:--Xmx256m}
+      POOL_SIZE: ${POOL_SIZE:-20}
+      INTERVAL_SEC: ${INTERVAL_SEC:-5}
+      OWNER: ${OWNER:-0:0}
+    volumes:
+      - ../../collector:/collector:ro
+      - ${OUT_DIR:-./out}:/out
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/127.0.0.1/8080 && printf \"GET /health HTTP/1.0\\r\\n\\r\\n\" >&3 && grep -q ok <&3'"]
+      interval: 2s
+      timeout: 3s
+      retries: 60
+    networks: [lms]
+
+  load:
+    image: artilleryio/artillery:2.0.34
+    profiles: [load]
+    depends_on:
+      app:
+        condition: service_healthy
+    volumes:
+      - ${OUT_DIR:-./out}:/out
+    # run.sh renders load/lms-sessions.yml into OUT_DIR with the requested size
+    command: ["run", "--output", "/out/artillery_report.json", "/out/lms-sessions.yml"]
+    networks: [lms]
+
+networks:
+  lms:
+    internal: true

@@ -1,0 +1,44 @@
+# Release: push a tag such as v0.2.0. Re-runs every check, then publishes a
+# source archive with SHA-256 checksums as a GitHub Release. No deployment:
+# installing on VMs and any Azure change stay manual, approved operations.
+name: release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: all checks including real JVM scenarios
+        env:
+          REQUIRE_DOCKER: "1"
+        run: sh tests/run_all.sh --docker
+      - name: version in collector matches the tag
+        run: |
+          v=$(sh collector/collect_gc.sh --version)
+          test "v$v" = "$GITHUB_REF_NAME" || { echo "collector says $v, tag is $GITHUB_REF_NAME"; exit 1; }
+      - name: package
+        run: |
+          name="azure-java-gc-logger-${GITHUB_REF_NAME}"
+          git archive --format=tar.gz --prefix="$name/" -o "$name.tar.gz" "$GITHUB_REF_NAME"
+          # minimal bundle for monitored VMs: collector + systemd example only
+          mkdir -p "vm/$name" && cp -R collector LICENSE README.ja.md "vm/$name/"
+          tar -C vm -czf "$name-collector.tar.gz" "$name"
+          sha256sum "$name.tar.gz" "$name-collector.tar.gz" > SHA256SUMS
+      - name: publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          name="azure-java-gc-logger-${GITHUB_REF_NAME}"
+          gh release create "$GITHUB_REF_NAME" "$name.tar.gz" "$name-collector.tar.gz" SHA256SUMS \
+            --title "$GITHUB_REF_NAME" --notes "See CHANGELOG.md. Reference implementation; not validated in production." --verify-tag

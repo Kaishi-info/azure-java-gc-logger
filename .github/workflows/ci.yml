@@ -1,0 +1,58 @@
+# Continuous integration. Public repository: GitHub-hosted runners are free.
+# Nothing here touches Azure or any real JVM; all data is synthetic.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: shellcheck (POSIX sh)
+        run: shellcheck -s sh collector/collect_gc.sh tests/*.sh examples/leaky-jdbc/run-docker.sh examples/lms-load/run.sh examples/lms-load/app/entrypoint.sh
+      - name: public content check (secrets, IDs, institution wording, remote resources, real logs)
+        run: sh tests/check_public_content.sh
+
+  unit:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: collector tests (sh)
+        run: sh tests/test_collector.sh
+      - name: collector tests (dash)
+        if: runner.os == 'Linux'
+        run: dash tests/test_collector.sh
+      - name: collector tests (bash --posix)
+        run: bash --posix tests/test_collector.sh
+      - name: dashboard tests
+        run: node tests/test_dashboard.cjs
+
+  real-jvm:
+    needs: [lint, unit]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: real JVM scenarios in Docker (leak vs fixed, no-passwd uid, diagnostics)
+        env:
+          REQUIRE_DOCKER: "1"
+        run: sh tests/test_real_jvm.sh

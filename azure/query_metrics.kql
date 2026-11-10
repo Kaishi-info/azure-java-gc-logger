@@ -1,0 +1,6 @@
+// Log Analytics: 1-minute JVM/GC samples (requires AMA Custom JSON Logs + JavaGc_CL)
+JavaGc_CL
+| where TimeGenerated > ago(24h)
+| where record_type == "metric"
+| project TimeGenerated, host, old_pct, old_used_mib, heap_used_mib, gct_delta_ms, fgc_delta
+| order by TimeGenerated asc

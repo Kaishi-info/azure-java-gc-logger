@@ -1,0 +1,8 @@
+// Optional stateful alert for ongoing elevated Old occupancy.
+// Tune cutoff after observing baseline; 85% alone is NOT a proof of a memory leak.
+JavaGc_CL
+| where TimeGenerated > ago(10m)
+| where record_type == "metric"
+| summarize arg_max(TimeGenerated, old_pct) by host
+| where old_pct >= 85
+| project host, old_pct, TimeGenerated

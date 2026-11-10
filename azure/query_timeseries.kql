@@ -1,0 +1,8 @@
+// Log Analytics: time-binned Old-generation utilization. One-minute samples expected.
+// If TimeGenerated is ingestion time instead of the original timestamp, consider
+// DCR transform TimeGenerated=todatetime(timestamp_utc).
+JavaGc_CL
+| where TimeGenerated > ago(24h)
+| where record_type == "metric"
+| summarize OldPct=avg(old_pct), HeapGiB=avg(heap_used_mib)/1024.0 by bin(TimeGenerated, 1m), host
+| render timechart
